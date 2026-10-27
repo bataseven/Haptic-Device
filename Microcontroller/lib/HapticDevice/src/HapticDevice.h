@@ -22,6 +22,9 @@
 #define FINGER_UPPER_SOFT_LIMIT 160000  // 160000
 #define RIGID_BODY_STIFFNESS_THRESHOLD \
     12                              // Virtual objects with stiffness more than this value are considered rigid bodies.
+#define FINGER_FORCE_KP 800         // Initial Kp of the finger force controller. Can be changed over serial.
+#define FINGER_CONTACT_KP_SCALE \
+    (1.0 / 3.0)  // The finger force controller Kp is multiplied by this while touching a virtual object.
 #define PALM_LOWER_SOFT_LIMIT 550   // 500
 #define PALM_UPPER_SOFT_LIMIT 7200  // 6800 // 7400 // 7350
 #define PALM_LOWER_HARD_LIMIT 400
@@ -122,6 +125,9 @@ class HapticDevice {
 
     AdmittanceController IOAC =
         AdmittanceController(2, 10, 1.0 / CONTROL_LOOP_FREQUENCY, 4);  // Mass, Damping, dt, Gain
+    // If true, the desired velocity of the finger is the admittance controller output instead of the finger waveform.
+    // Only has an effect in velocity control mode.
+    bool useAdmittanceControl = false;
 
     PseudoObject obj;
     WSG50 wsg50;

@@ -49,7 +49,7 @@ void setup() {
     device->initialize();
     ROShandler = new ROSHandler(device);
     ROShandler->initialize();
-    ROShandshler->WSG50.cmd.speed = 350;         // Set the velocity for the gripper.
+    ROShandler->WSG50.cmd.speed = 350;         // Set the velocity for the gripper.
     ROShandler->WSG50.cmd.mode = "auto_update";  // Gripper working mode.
 #else
     SERIAL_PORT.begin(SERIAL_BAUD_RATE);

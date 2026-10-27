@@ -34,11 +34,12 @@ MotorWithEncoder::MotorWithEncoder(uint8_t motorPin1, uint8_t motorPin2, uint8_t
 #if defined(__arm__) && defined(CORE_TEENSY)
     analogWriteResolution(MotorWithEncoder::resolutionBit);
 #endif
-    _lastErrors = new double[_errorWindowLength];
-    _lastVelocities = new double[_velocityWindowLength];
-    _lastPositions = new int32_t[_positionWindowLength];
-    _lastAccelerations = new double[_accelerationWindowLength];
-    _deltaTs = new long long[_positionWindowLength];
+    // "()" initializes the arrays with zeros.
+    _lastErrors = new double[_errorWindowLength]();
+    _lastVelocities = new double[_velocityWindowLength]();
+    _lastPositions = new int32_t[_positionWindowLength]();
+    _lastAccelerations = new double[_accelerationWindowLength]();
+    _deltaTs = new long long[_positionWindowLength]();
     _motorIndex = motorCount++;
 }
 
@@ -98,16 +99,19 @@ void MotorWithEncoder::update() {
     for (int i = 0; i < _velocityWindowLength; i++) velocitySum += _lastVelocities[i];
     _velocity = (double)velocitySum / (double)_velocityWindowLength;
 
-    // Calculate the velocity using backward finite difference
+    // Calculate the acceleration using backward finite difference
     // Coefficients are calculated using the link below
     // https://web.media.mit.edu/~crtaylor/calculator.html
-    int64_t instantaneousAcceleration =
-        (11 * _lastPositions[(_positionIndex - 4 + _positionWindowLength) % _positionWindowLength] -
-         56 * _lastPositions[(_positionIndex - 3 + _positionWindowLength) % _positionWindowLength] +
-         114 * _lastPositions[(_positionIndex - 2 + _positionWindowLength) % _positionWindowLength] -
-         104 * _lastPositions[(_positionIndex - 1 + _positionWindowLength) % _positionWindowLength] +
-         35 * _lastPositions[(_positionIndex - 0 + _positionWindowLength) % _positionWindowLength]) /
-        (12 * hAverage * hAverage);
+    // The formula needs the last 5 positions, so the acceleration is 0 if fewer positions are kept.
+    int64_t instantaneousAcceleration = 0;
+    if (_positionWindowLength >= 5)
+        instantaneousAcceleration =
+            (11 * _lastPositions[(_positionIndex - 4 + _positionWindowLength) % _positionWindowLength] -
+             56 * _lastPositions[(_positionIndex - 3 + _positionWindowLength) % _positionWindowLength] +
+             114 * _lastPositions[(_positionIndex - 2 + _positionWindowLength) % _positionWindowLength] -
+             104 * _lastPositions[(_positionIndex - 1 + _positionWindowLength) % _positionWindowLength] +
+             35 * _lastPositions[(_positionIndex - 0 + _positionWindowLength) % _positionWindowLength]) /
+            (12 * hAverage * hAverage);
 
     _lastAccelerations[_accelerationIndex] = instantaneousAcceleration;
 
@@ -376,6 +380,7 @@ void MotorWithEncoder::forceRotate(int direction, double pulse) {
 // Sets the encoder position as the given value.
 void MotorWithEncoder::setEncoderPos(int32_t position) {
     _positionOffset = _encoder->read() - position;
+    _resetPositionHistory(position);
     this->release();
 }
 
@@ -389,9 +394,15 @@ void MotorWithEncoder::resetEncoderPos() {
     _positionOffset = 0;
     _encoder->readAndReset();
     this->resetIntegralTerm();
-    _lastPositions = new int32_t[_positionWindowLength];
+    _resetPositionHistory(0);
     this->release();
 };
+
+// Fills the position history with the given position, so that the velocity does not jump when the position is
+// changed by resetting or setting the encoder position.
+void MotorWithEncoder::_resetPositionHistory(int32_t position) {
+    for (int i = 0; i < _positionWindowLength; i++) _lastPositions[i] = position;
+}
 
 // Does not move the motor, only sets a target position.
 // Use go() function after calling this function to move.
@@ -426,17 +437,21 @@ void MotorWithEncoder::setCoefficient(double count_to_mm) { _count_to_mm = count
 
 // Sets the number of finite difference elements to be used for the velocity derivation from the position.
 void MotorWithEncoder::setFDMElementCount(int count) {
-    _fdmElementCount = count;
+    _fdmElementCount = count < 2 ? 2 : count;
     _positionWindowLength = _fdmElementCount;
-    _lastPositions = new int32_t[_positionWindowLength];
-    _deltaTs = new long long[_positionWindowLength];
+    delete[] _lastPositions;
+    delete[] _deltaTs;
+    _lastPositions = new int32_t[_positionWindowLength]();
+    _deltaTs = new long long[_positionWindowLength]();
     _positionIndex = 0;
+    _resetPositionHistory(_position);
 }
 
 // Sets the length of the velocity window for the moving average filter.
 void MotorWithEncoder::setVelocityWindowLength(int length) {
-    _velocityWindowLength = length;
-    _lastVelocities = new double[_velocityWindowLength];
+    _velocityWindowLength = length < 1 ? 1 : length;
+    delete[] _lastVelocities;
+    _lastVelocities = new double[_velocityWindowLength]();
     _velocityIndex = 0;
 }
 
@@ -486,6 +501,10 @@ void MotorWithEncoder::setKd(double Kd) {
     }
 }
 
+// Scales the proportional gain of the force controller without changing the gain itself.
+// HapticDevice uses this to lower the gain while the finger is in contact with a virtual object.
+void MotorWithEncoder::setForceKpScale(double scale) { _forceKpScale = scale; }
+
 // Sets the integral term of the PID controller to zero.
 void MotorWithEncoder::resetIntegralTerm() { _iTerm = 0; }
 
@@ -513,8 +532,17 @@ MotorWithEncoder::DriverMode MotorWithEncoder::getDriverMode() { return _driverM
 double MotorWithEncoder::getCoefficient() { return _count_to_mm; }
 
 // Return the proportional gain for the selected(_controllerMode) PID controller.
-double MotorWithEncoder::getKp() {
-    switch (_controllerMode) {
+double MotorWithEncoder::getKp() { return getKp(_controllerMode); }
+
+// Return the integral gain for the selected(_controllerMode) PID controller.
+double MotorWithEncoder::getKi() { return getKi(_controllerMode); }
+
+// Return the derivative gain for the selected(_controllerMode) PID controller.
+double MotorWithEncoder::getKd() { return getKd(_controllerMode); }
+
+// Return the proportional gain for the PID controller of the given mode.
+double MotorWithEncoder::getKp(ControllerMode mode) {
+    switch (mode) {
         case ControllerMode::POSITION_CONTROL:
             return _KpPos;
         case ControllerMode::VELOCITY_CONTROL:
@@ -526,9 +554,9 @@ double MotorWithEncoder::getKp() {
     }
 }
 
-// Return the integral gain for the selected(_controllerMode) PID controller.
-double MotorWithEncoder::getKi() {
-    switch (_controllerMode) {
+// Return the integral gain for the PID controller of the given mode.
+double MotorWithEncoder::getKi(ControllerMode mode) {
+    switch (mode) {
         case ControllerMode::POSITION_CONTROL:
             return _KiPos;
         case ControllerMode::VELOCITY_CONTROL:
@@ -540,9 +568,9 @@ double MotorWithEncoder::getKi() {
     }
 }
 
-// Return the derivative gain for the selected(_controllerMode) PID controller.
-double MotorWithEncoder::getKd() {
-    switch (_controllerMode) {
+// Return the derivative gain for the PID controller of the given mode.
+double MotorWithEncoder::getKd(ControllerMode mode) {
+    switch (mode) {
         case ControllerMode::POSITION_CONTROL:
             return _KdPos;
         case ControllerMode::VELOCITY_CONTROL:
@@ -625,7 +653,7 @@ double MotorWithEncoder::_calculatePID(double desired) {
             err = desired - _velocity;
             break;
         case ControllerMode::FORCE_CONTROL:
-            Kp = _KpFor;
+            Kp = _KpFor * _forceKpScale;
             Ki = _KiFor;
             Kd = _KdFor;
             err = desired - _force;

@@ -48,6 +48,7 @@ class MotorWithEncoder {
     void setKp(double);
     void setKi(double);
     void setKd(double);
+    void setForceKpScale(double);
 
     // Do not use this function unless you know what you are doing
     void resetIntegralTerm();
@@ -63,6 +64,9 @@ class MotorWithEncoder {
     double getKp();
     double getKi();
     double getKd();
+    double getKp(ControllerMode);
+    double getKi(ControllerMode);
+    double getKd(ControllerMode);
 
     void setHardPosLimit(int32_t, int32_t);
     void setSoftPosLimit(int32_t, int32_t);
@@ -107,7 +111,7 @@ class MotorWithEncoder {
     int32_t _velocityDesired = 0;
     int32_t _velocityPrevious = 0;
     int32_t _velocityErrorPrevious = 0;
-    int32_t _PIDErrorPrevious = 0;
+    double _PIDErrorPrevious = 0;
 
     int32_t _acceleration = 0;  // Unit is encoder count per second squared
     int32_t _lowerHardPosLimit = 0;
@@ -153,10 +157,11 @@ class MotorWithEncoder {
            _KdVel = 0;  // By default, controller is only P-controller. Gains for the velocity controller
     double _KpFor = 0, _KiFor = 0,
            _KdFor = 0;     // By default, controller is only P-controller. Gains for the force controller
+    double _forceKpScale = 1;  // Multiplies _KpFor without changing it. See setForceKpScale().
     double _deadBand = 0;  // Motor does not start rotating until a certain voltage is given. Set this value such that
                            // motor is almost rotating.
 
-    long long _iTerm = 0;
+    double _iTerm = 0;
     bool _hasHardPosLimit = false;
     bool _hasSoftPosLimit = false;
     bool _hardLimitViolation = false;
@@ -165,6 +170,7 @@ class MotorWithEncoder {
     bool _canMove = true;
     
     void _home();
+    void _resetPositionHistory(int32_t);
     long long _calculatePositionPID(long);
     long long _calculateVelocityPID(long);
     double _calculatePID(double);

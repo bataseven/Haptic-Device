@@ -2,7 +2,7 @@
  
   - WaveformGenerator.cpp
   - A non-blocking waveform generator library.
-  - Uses micros() to create accurate waveforms.
+  - Uses micros() to advance the phase of the waveform, so changing the frequency does not make the output jump.
   - Frequency, amplitude, offset manipulation.
   - Following waveforms available:
     -- CONSTANT,  
@@ -31,7 +31,17 @@ WaveformGenerator::WaveformGenerator(WaveType type, float frequency,  // Constru
 // Generate a point on the wave with the given parameters.
 // This method should be called as frequently as possible to generate a smoother waveform.
 float WaveformGenerator::generate() {
-    _signalTimer = micros();
+    // Advance the phase by the time elapsed since the last call. The waves are calculated from the phase instead of
+    // the time since boot, so that the output does not jump when the frequency changes.
+    unsigned long now = micros();
+    if (_started) {
+        double dt = (now - _lastMicros) / 1000000.0;  // Unsigned subtraction also works when micros() overflows
+        _phase = fmod(_phase + 2 * PI * _frequency * dt, 2 * PI);
+        if (_phase < 0) _phase += 2 * PI;  // Negative frequency
+        if (!isfinite(_phase)) _phase = 0;
+    }
+    _started = true;
+    _lastMicros = now;
 
     switch (_type) {
         // Constant output which is equal to _amplitude
@@ -39,13 +49,9 @@ float WaveformGenerator::generate() {
             _signal = _amplitude;
         } break;
 
-            // Square wave that alternates between 0 and the "_amplitude" attribute
+            // Square wave that is "_amplitude" in the first half of the period and 0 in the second half
         case WaveType::SQUARE: {
-            if ((millis() - _stepSignalTimer) / 1000.0 > _period / 2) {
-                _stepSignalTimer = millis();
-                _stepChanger = !_stepChanger;
-            }
-            _signal = _stepChanger ? 0 : _amplitude;
+            _signal = _phase < PI ? _amplitude : 0;
         } break;
 
         // Sawtooth wave (Generated using fourier series)
@@ -55,7 +61,7 @@ float WaveformGenerator::generate() {
             for (int i = 1; i <= n; i++) {
                 float b_n = i % 2 == 0 ? -2.0 / i : 2.0 / i;                         // Coefficient of each term,
                                                                                      // alternates between 2/i and -2/i
-                y += b_n * sin(i * 2 * PI * _frequency * -_signalTimer / 1000000.0);  // Sin part of each term
+                y += b_n * sin(-i * _phase);                                         // Sin part of each term
             }
             _signal = constrain(y / PI * abs(_amplitude), -abs(_amplitude), abs(_amplitude));
             // _signal -= _amplitude;
@@ -66,14 +72,14 @@ float WaveformGenerator::generate() {
             double y = 0;
             int n = _fourierTermCount;
             for (int i = 1; i <= n; i++)
-                y += (1 / pow((2 * i - 1), 2) * cos((4 * i - 2) * PI * (_signalTimer / 1000000.0) / _period));
+                y += (1 / pow((2 * i - 1), 2) * cos((2 * i - 1) * _phase));
             y *= (8 * abs(_amplitude) / PI / PI);
             _signal = y;
         } break;
 
         // Sinusoidal wave
         case WaveType::SINUSOIDAL: {
-            _signal = abs(_amplitude) * sin(2 * PI * _frequency * _signalTimer / 1000000.0);
+            _signal = abs(_amplitude) * sin(_phase);
         } break;
         case WaveType::TRAPEZOIDAL: {
             double y = 0;
@@ -81,9 +87,9 @@ float WaveformGenerator::generate() {
             int n = _fourierTermCount;
             for (int i = 1; i < n * 2; i += 2) {
                 if (counter <= 1)
-                    y += sin(2 * PI * _frequency * _signalTimer / 1000000.0 * i) / (i * i);
+                    y += sin(_phase * i) / (i * i);
                 else
-                    y -= sin(2 * PI * _frequency * _signalTimer / 1000000.0 * i) / (i * i);
+                    y -= sin(_phase * i) / (i * i);
                 counter++;
                 counter %= 4;
             }

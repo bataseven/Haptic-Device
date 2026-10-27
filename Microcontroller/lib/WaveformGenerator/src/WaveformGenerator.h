@@ -28,9 +28,9 @@ class WaveformGenerator {
   int getFourierTerms();
 
  private:
-  unsigned long _signalTimer;
-  unsigned long _stepSignalTimer;
-  bool _stepChanger = false;
+  unsigned long _lastMicros = 0;
+  bool _started = false;
+  double _phase = 0;  // Position in the current period in radians [0, 2*PI)
   WaveType _type = WaveType::SQUARE;
   float _frequency = 1;
   float _period = 1;

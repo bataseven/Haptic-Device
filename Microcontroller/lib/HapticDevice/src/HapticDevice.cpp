@@ -14,7 +14,7 @@ HapticDevice::HapticDevice() {
     // Initialize the LED when the object is created.
     led.begin();
 }
-float fingerPGain = 800;
+
 void HapticDevice::initialize() {
     thumbInnerSensor = new PressureSensor(A9);
     thumbOuterSensor = new PressureSensor(A8);
@@ -38,7 +38,7 @@ void HapticDevice::initialize() {
     finger->setKd(0.03);
 
     finger->setControllerMode(MotorWithEncoder::ControllerMode::FORCE_CONTROL);
-    finger->setKp(fingerPGain);
+    finger->setKp(FINGER_FORCE_KP);
     finger->setKi(5);
     finger->setKd(80);
 
@@ -227,9 +227,8 @@ void HapticDevice::fingerControlLoop() {
         float springForce = -(obj.stiffness * penetrationDepth * COUNT_TO_MM);
         float dampingForce = -(obj.damping * finger->getVel() * COUNT_TO_MM);
         desiredFingerForce = obj.stiffness < RIGID_BODY_STIFFNESS_THRESHOLD ? springForce + dampingForce : 0;
-        if (finger->getControllerMode() == MotorWithEncoder::FORCE_CONTROL) {
-            finger->setKp(fingerPGain / 3);
-        }
+        // Only scales the gain, so that the Kp set over serial is kept.
+        finger->setForceKpScale(FINGER_CONTACT_KP_SCALE);
         obj.inContact = true;
     } else {
         // Reset the integral term of the PID controller when the finger is no longer in contact with the object.
@@ -238,9 +237,7 @@ void HapticDevice::fingerControlLoop() {
             finger->resetIntegralTerm();
         desiredFingerForce = 0;
         obj.inContact = false;
-        if (finger->getControllerMode() == MotorWithEncoder::FORCE_CONTROL) {
-            finger->setKp(fingerPGain);
-        }
+        finger->setForceKpScale(1);
     }
 
     double outerForceScale = 1; // This is higher because I want the user to open the fingers more easily.
@@ -253,12 +250,12 @@ void HapticDevice::fingerControlLoop() {
 
     netFingerForce = (outerForce - innerForce);
 
-    double forceError = desiredFingerForce - netFingerForce; // Force error
-    desiredFingerVel =
-        IOAC.solve(forceError) * 1000 / COUNT_TO_MM; // Convert the meter/sec output from the conttoller to count/sec
-
-    // Comment next line to activate admittance control for the velocity controller
-    desiredFingerVel = generatedFingerWave;
+    if (useAdmittanceControl) {
+        double forceError = desiredFingerForce - netFingerForce; // Force error
+        desiredFingerVel =
+            IOAC.solve(forceError) * 1000 / COUNT_TO_MM; // Convert the meter/sec output from the conttoller to count/sec
+    } else
+        desiredFingerVel = generatedFingerWave;
 
     desiredFingerForce = netFingerForce > 0 ? 0 : desiredFingerForce;
 

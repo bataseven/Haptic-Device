@@ -25,8 +25,6 @@ To change waveforms:    "W" + "T" or "F" or "A" or "O" + <Generator Index> + SER
 
 To change the controller mode: "O" + <Motor Index> + <ControllerMode> => "O10"
 
-To set desired force:   "D" + <Desired Force> => "D11.5"
-
 To send the stiffness and the nominal width of the object: "P" + <Nominal Width> + # + <Stiffness> + # + <Damping> =>
 "P50000#2.5#0.1"
 
@@ -277,13 +275,6 @@ void SerialHandler::parseString(char *string) {
             this->printLimits();
             break;
 
-        case 'd':
-        case 'D':
-            if (strlen(string) > 0) {
-                device->desiredFingerForce = atof(string);
-            }
-            break;
-
         case 'P':
         case 'p':
             if (strlen(string) > 0) {
@@ -341,20 +332,16 @@ void SerialHandler::parseString(char *string) {
 }
 
 void SerialHandler::printGains() {
-    MotorWithEncoder::ControllerMode temp = device->finger->getControllerMode();
-    device->finger->setControllerMode(MotorWithEncoder::POSITION_CONTROL);
-    double p1 = device->finger->getKp();
-    double i1 = device->finger->getKi();
-    double d1 = device->finger->getKd();
-    device->finger->setControllerMode(MotorWithEncoder::VELOCITY_CONTROL);
-    double p2 = device->finger->getKp();
-    double i2 = device->finger->getKi();
-    double d2 = device->finger->getKd();
-    device->finger->setControllerMode(MotorWithEncoder::FORCE_CONTROL);
-    double p3 = device->finger->getKp();
-    double i3 = device->finger->getKi();
-    double d3 = device->finger->getKd();
-    device->finger->setControllerMode(temp);
+    // The gains are read per mode. Switching the controller mode to read them would affect the running control loop.
+    double p1 = device->finger->getKp(MotorWithEncoder::POSITION_CONTROL);
+    double i1 = device->finger->getKi(MotorWithEncoder::POSITION_CONTROL);
+    double d1 = device->finger->getKd(MotorWithEncoder::POSITION_CONTROL);
+    double p2 = device->finger->getKp(MotorWithEncoder::VELOCITY_CONTROL);
+    double i2 = device->finger->getKi(MotorWithEncoder::VELOCITY_CONTROL);
+    double d2 = device->finger->getKd(MotorWithEncoder::VELOCITY_CONTROL);
+    double p3 = device->finger->getKp(MotorWithEncoder::FORCE_CONTROL);
+    double i3 = device->finger->getKi(MotorWithEncoder::FORCE_CONTROL);
+    double d3 = device->finger->getKd(MotorWithEncoder::FORCE_CONTROL);
     this->p(_startMarker)
         .p("K0")
         .p(p1)
@@ -376,20 +363,15 @@ void SerialHandler::printGains() {
         .p(d3)
         .pln(_endMarker);
 
-    temp = device->palm->getControllerMode();
-    device->palm->setControllerMode(MotorWithEncoder::POSITION_CONTROL);
-    p1 = device->palm->getKp();
-    i1 = device->palm->getKi();
-    d1 = device->palm->getKd();
-    device->palm->setControllerMode(MotorWithEncoder::VELOCITY_CONTROL);
-    p2 = device->palm->getKp();
-    i2 = device->palm->getKi();
-    d2 = device->palm->getKd();
-    device->palm->setControllerMode(MotorWithEncoder::FORCE_CONTROL);
-    p3 = device->palm->getKp();
-    i3 = device->palm->getKi();
-    d3 = device->palm->getKd();
-    device->palm->setControllerMode(temp);
+    p1 = device->palm->getKp(MotorWithEncoder::POSITION_CONTROL);
+    i1 = device->palm->getKi(MotorWithEncoder::POSITION_CONTROL);
+    d1 = device->palm->getKd(MotorWithEncoder::POSITION_CONTROL);
+    p2 = device->palm->getKp(MotorWithEncoder::VELOCITY_CONTROL);
+    i2 = device->palm->getKi(MotorWithEncoder::VELOCITY_CONTROL);
+    d2 = device->palm->getKd(MotorWithEncoder::VELOCITY_CONTROL);
+    p3 = device->palm->getKp(MotorWithEncoder::FORCE_CONTROL);
+    i3 = device->palm->getKi(MotorWithEncoder::FORCE_CONTROL);
+    d3 = device->palm->getKd(MotorWithEncoder::FORCE_CONTROL);
     this->p(_startMarker)
         .p("K1")
         .p(p1)
