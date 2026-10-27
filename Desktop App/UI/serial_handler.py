@@ -2,7 +2,7 @@ from os.path import dirname, abspath
 import time
 import re
 from PyQt5.QtSerialPort import QSerialPortInfo
-from PyQt5.QtWidgets import QPushButton, QLabel, QLineEdit, QComboBox, QRadioButton, QTextEdit, QCheckBox, QWidget, QMessageBox, QFrame, QGridLayout
+from PyQt5.QtWidgets import QApplication, QPushButton,QLabel, QLineEdit, QComboBox, QRadioButton, QTextEdit, QCheckBox, QWidget, QMessageBox, QFrame, QGridLayout
 from PyQt5.QtCore import pyqtSlot,  QTimer, QEventLoop, Qt, pyqtSignal
 from PyQt5.QtGui import QDoubleValidator, QIntValidator, QTextCursor, QPixmap
 from PyQt5.uic import loadUi  # type: ignore
@@ -11,6 +11,8 @@ from .devices import HapticDevice
 from .settings import serialSettings as st
 from .serial_worker import SerialWorker, ConnectionStatus
 from .animator import QAnimator
+
+TEENSY_VENDOR_ID = 0x16C0  # USB vendor id of the Teensy boards (PJRC)
 
 
 class SerialHandler(QWidget):
@@ -153,9 +155,7 @@ class SerialHandler(QWidget):
         self.hapticDevice = hapticDevice
         self.refreshPortsButton.clicked.connect(self.refreshSerialPorts)
         self.refreshPortsButton.animateClick()
-        self.connectSerialButton.clicked.connect(lambda: self.serialWorker.connectSerial(
-            port=self.portsCombo.currentText(), baudrate=int(self.baudrateEdit.text())
-            if self.baudrateEdit.text().isdigit() else 115200))
+        self.connectSerialButton.clicked.connect(self.connectOrDisconnect)
 
         self.baudrateEdit.returnPressed.connect(
             self.connectSerialButton.animateClick)
@@ -310,26 +310,58 @@ class SerialHandler(QWidget):
         self.waveCombo.setItemData(
             5, "Trapezoidal signal that osciallates around 0, between +amplitude and -amplitude", Qt.ToolTipRole)
 
+    @staticmethod
+    def isTeensy(port: QSerialPortInfo) -> bool:
+        return port.hasVendorIdentifier() and port.vendorIdentifier() == TEENSY_VENDOR_ID
+
     def refreshSerialPorts(self) -> None:
-        availablePorts = [port.portName()
-                          for port in QSerialPortInfo.availablePorts()]
+        # The combo box shows the description of each port, and keeps the port name as the item data.
+        ports = {port.portName(): port for port in QSerialPortInfo.availablePorts()}
 
         # Remove the ports that no longer exist. Going backwards, so removing an item doesn't skip the next one.
         for i in reversed(range(self.portsCombo.count())):
-            if self.portsCombo.itemText(i) not in availablePorts:
+            if self.portsCombo.itemData(i) not in ports:
                 self.portsCombo.removeItem(i)
 
         # Add the ports that are not in the combo box yet.
-        for port in availablePorts:
-            if self.portsCombo.findText(port) == -1:
-                self.portsCombo.addItem(port)
+        for name, port in ports.items():
+            if self.portsCombo.findData(name) == -1:
+                description = "Teensy" if self.isTeensy(port) else port.description()
+                self.portsCombo.addItem(f"{name} ({description})" if description else name, name)
+                # Select the device as soon as it is plugged in, unless another Teensy is already selected
+                selected = ports.get(self.portsCombo.currentData())
+                if self.isTeensy(port) and not (selected and self.isTeensy(selected)):
+                    self.portsCombo.setCurrentIndex(self.portsCombo.count() - 1)
 
         # If no ports are available, disable the connect button.
-        hasPorts = len(availablePorts) > 0
+        hasPorts = len(ports) > 0
         if not hasPorts:
             self.portsCombo.addItem("No ports detected")
         self.portsCombo.setEnabled(hasPorts)
         self.connectSerialButton.setEnabled(hasPorts)
+
+    def connectOrDisconnect(self) -> None:
+        if self.isSerialConnected:
+            self.serialWorker.disconnectSerial()
+            return
+        port = self.portsCombo.currentData()
+        if not port:
+            return
+        baudrate = int(self.baudrateEdit.text()) if self.baudrateEdit.text().isdigit() else 115200
+
+        # Opening a port can take seconds, e.g. a Bluetooth port whose device is not reachable. Show that the app is
+        # busy before it waits.
+        self.connectSerialButton.setText("Connecting...")
+        self.connectSerialButton.setEnabled(False)
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        QApplication.processEvents()
+        try:
+            self.serialWorker.connectSerial(port=port, baudrate=baudrate)
+        finally:
+            QApplication.restoreOverrideCursor()
+            if not self.isSerialConnected:
+                self.connectSerialButton.setText("Connect")
+                self.connectSerialButton.setEnabled(True)
 
     def handleConnectionChanges(self, status: ConnectionStatus) -> None:
         if status == ConnectionStatus.Disconnected:  # When the serial is closed
@@ -374,6 +406,12 @@ class SerialHandler(QWidget):
 
             for button in self.serialButtons:
                 button.setEnabled(True)
+
+        elif status == ConnectionStatus.DeviceNotFound:  # When the port could not be opened
+            self.infoMessagesEdit.append(
+                f"<span style=\" font-size:8pt; font-weight:400; color:red;\" >Could not open "
+                f"{self.portsCombo.currentText()}. Select the port of the haptic device: it is listed as Teensy "
+                f"when it is connected over USB.</span>")
 
         elif status == ConnectionStatus.ConnectionLost:
             self.heartbeatTimer.stop()
