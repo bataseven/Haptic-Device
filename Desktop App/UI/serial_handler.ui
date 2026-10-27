@@ -1088,16 +1088,6 @@ border: 0px;
            </property>
           </widget>
          </item>
-         <item row="3" column="2">
-          <widget class="QPushButton" name="saveEEPROMButton">
-           <property name="enabled">
-            <bool>false</bool>
-           </property>
-           <property name="text">
-            <string>Save To EEPROM</string>
-           </property>
-          </widget>
-         </item>
         </layout>
        </item>
       </layout>

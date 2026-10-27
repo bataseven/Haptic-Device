@@ -94,9 +94,9 @@ class DataRecorder(QWidget):
             return
         try:
             # Include current date in the file name
-            self.fileName = "\\HapticDeviceData_" + self.portName + "_" +\
+            self.fileName = "HapticDeviceData_" + self.portName + "_" +\
                 time.strftime("%Y-%m-%d_%H-%M-%S") + ".csv"
-            self.fullPath = self.savePathEdit.text() + self.fileName
+            self.fullPath = os.path.join(self.savePathEdit.text(), self.fileName)
             with open(self.fullPath, "w") as file:
                 file.write(SEPARATOR.join(HEADER) + "\n")
         except Exception as e:

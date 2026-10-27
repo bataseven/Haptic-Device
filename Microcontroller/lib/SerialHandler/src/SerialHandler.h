@@ -1,17 +1,7 @@
-/*"""
-
- Serial Message Format:
- First character of the message is the message type for both sending and reception.
- The message type is followed by the message payload.
- 
-   - While sending to haptic device:
-        "G" + <Gripper Width> + SERIAL_SEPERATOR_CH + <Gripper Speed> + SERIAL_SEPERATOR_CH + <Gripper Force>
-        "C" + <Working Modes or Commands>
-
-    - While receiving from haptic device:
-        "T" + <Next Point On The Trajectory>
-        
-"""*/
+/*
+ Receives commands over the serial port and periodically sends the state of the haptic device.
+ The message format is described at the top of SerialHandler.cpp and in Microcontroller/README.md.
+*/
 #ifndef SerialHandler_H
 #define SerialHandler_H
 #include "advancedSerial.h"
@@ -37,6 +27,7 @@ class SerialHandler : public advancedSerial {
     void printGains();
     void printLimits();
     void printModes();
+    void printUnits();
     void setHapticDevice(HapticDevice* hapticDevice);
     Stream & getSerial();
 

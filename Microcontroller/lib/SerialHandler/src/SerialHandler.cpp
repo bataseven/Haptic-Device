@@ -72,6 +72,9 @@ Host timeout: "X" + <Timeout in ms>. Sent when the motors are stopped because of
 Controller mode: "M" + <Motor Index> + <Controller Mode> => "M02" (finger in force control). Sent at startup, after
 the controller mode changes, and with the gains and limits when "C1" is received.
 
+Encoder count to mm factors: "U" + <Finger> + # + <Palm> => "U0.000296452618#0.005973945762". Sent when "C1" is
+received.
+
 MPU6050 Euler Angles:               "E" + <Yaw> + SERIAL_SEPERATOR_CH + <Roll> + SERIAL_SEPERATOR_CH + <Pitch> =>
 "E10.2#10.2#10.2" MPU6050 Quaternions: "Q" + <Q0> + SERIAL_SEPERATOR_CH + <Q1> + SERIAL_SEPERATOR_CH + <Q2> +
 SERIAL_SEPERATOR_CH + <Q3> => "Q0.5#0.5#0.5#0.5"
@@ -170,6 +173,7 @@ void SerialHandler::parseString(char *string) {
                     this->printGains();
                     this->printLimits();
                     this->printModes();
+                    this->printUnits();
                 }
             }
             break;
@@ -449,6 +453,11 @@ void SerialHandler::printGains() {
 void SerialHandler::printModes() {
     this->p(_startMarker).p("M0").p((int)device->finger->getControllerMode()).pln(_endMarker);
     this->p(_startMarker).p("M1").p((int)device->palm->getControllerMode()).pln(_endMarker);
+}
+
+// The interface converts encoder counts to mm with these, so they are only defined in the firmware.
+void SerialHandler::printUnits() {
+    this->p(_startMarker).p("U").p(COUNT_TO_MM, 12).p(_separator).p(COUNT_TO_MM_2, 12).pln(_endMarker);
 }
 
 void SerialHandler::printLimits() {

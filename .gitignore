@@ -1,3 +1,10 @@
 # Python cache files
 __pycache__/
 *.py[cod]
+
+# Simulink cache files
+slprj/
+*.slxc
+
+# Backups made by Desktop App/tools/fix_recording_headers.py
+*.csv.bak

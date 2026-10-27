@@ -40,26 +40,8 @@ def compile_all():
     """
     Compile style.qrc using rcc, pyside-rcc and pyrcc4
     """
-    print("Compiling for PyQt5: style_Dark.qrc -> pyqt5_style_Dark_rc.py")
-    os.system("pyrcc5 style_Dark.qrc -o pyqt5_style_Dark_rc.py")
-
     print("Compiling for PyQt5: style_DarkOrange.qrc -> pyqt5_style_DarkOrange_rc.py")
     os.system("pyrcc5 style_DarkOrange.qrc -o pyqt5_style_DarkOrange_rc.py")
-
-    print("Compiling for PyQt5: style_Classic.qrc -> pyqt5_style_Classic_rc.py")
-    os.system("pyrcc5 style_Classic.qrc -o pyqt5_style_Classic_rc.py")
-
-    print("Compiling for PyQt5: style_black.qrc -> pyqt5_style_black_rc.py")
-    os.system("pyrcc5 style_black.qrc -o pyqt5_style_black_rc.py")
-
-    print("Compiling for PyQt5: style_blue.qrc -> pyqt5_style_blue_rc.py")
-    os.system("pyrcc5 style_blue.qrc -o pyqt5_style_blue_rc.py")
-
-    print("Compiling for PyQt5: style_gray.qrc -> pyqt5_style_gray_rc.py")
-    os.system("pyrcc5 style_gray.qrc -o pyqt5_style_gray_rc.py")
-
-    print("Compiling for PyQt5: style_navy.qrc -> pyqt5_style_navy_rc.py")
-    os.system("pyrcc5 style_navy.qrc -o pyqt5_style_navy_rc.py")
 
 
 if __name__ == "__main__":

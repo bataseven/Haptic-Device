@@ -11,7 +11,6 @@ from .devices import HapticDevice
 from .settings import serialSettings as st
 from .serial_worker import SerialWorker, ConnectionStatus
 from .animator import QAnimator
-from .collapsible_box import QCollapsibleBox
 
 
 class SerialHandler(QWidget):
@@ -87,7 +86,6 @@ class SerialHandler(QWidget):
         self.freqSendButton: QPushButton
         self.ampSendButton: QPushButton
         self.offsetSendButton: QPushButton
-        self.saveEEPROMButton: QPushButton
 
         self.widthEdit: QLineEdit
         self.stiffnessEdit: QLineEdit
@@ -150,7 +148,7 @@ class SerialHandler(QWidget):
 
         # Put all serial related buttons in a list to enable/disable them
         self.serialButtons = [self.refreshPortsButton, self.animatorButton, self.stopFingerButton, self.stopPalmButton, self.positionControlButton, self.velocityControlButton, self.debugButton,
-                              self.forceControlButton, self.waveSendButton, self.freqSendButton, self.ampSendButton, self.offsetSendButton, self.objectSendButton, self.KpSendButton, self.KiSendButton, self.KdSendButton, self.saveEEPROMButton]
+                              self.forceControlButton, self.waveSendButton, self.freqSendButton, self.ampSendButton, self.offsetSendButton, self.objectSendButton, self.KpSendButton, self.KiSendButton, self.KdSendButton]
 
         self.hapticDevice = hapticDevice
         self.refreshPortsButton.clicked.connect(self.refreshSerialPorts)
@@ -194,9 +192,6 @@ class SerialHandler(QWidget):
             lambda: self.sendGain(self.KiEdit, "I"))
         self.KdSendButton.clicked.connect(
             lambda: self.sendGain(self.KdEdit, "D"))
-
-        self.saveEEPROMButton.clicked.connect(lambda: QMessageBox.warning(
-            self, "Not Implemented", "This feature is not implemented yet!", QMessageBox.Ok))
 
         self.gainsRadio1.clicked.connect(self.setGainPlaceholders)
         self.gainsRadio2.clicked.connect(self.setGainPlaceholders)
@@ -263,14 +258,6 @@ class SerialHandler(QWidget):
             self, self.fingerLabel.mousePressEvent, self.fingerLabel, "H0")
         self.palmLabel.mousePressEvent = mousePressEventWrapper(
             self, self.palmLabel.mousePressEvent, self.palmLabel, "H1")
-
-        # ! TODO: Not working properly.
-        # Remove the messagesLayout from the main layout and add it to the collapsible box.
-        # self.collapsibleMessageBox = QCollapsibleBox("Messages", self)
-        # self.layout().removeItem(self.messagesLayout)
-        # self.collapsibleMessageBox.setContentLayout(self.messagesLayout)
-        # self.layout().addWidget(self.collapsibleMessageBox)
-        
         self.setupUI()
 
     def setupUI(self) -> None:
@@ -602,6 +589,16 @@ class SerialHandler(QWidget):
                 else:
                     self.setMotorStatusText()
                     self.setGainPlaceholders()
+            elif msgType == 'U':
+                # Encoder count to mm factors of the finger and the palm. The firmware is the source of these values.
+                try:
+                    st.COUNT_TO_MM, st.COUNT_TO_MM2 = [
+                        float(k) for k in msg.split(st.SERIAL_SEPERATOR_CH)]
+                except Exception as e:
+                    self.infoMessagesEdit.append(
+                        "Error Parsing: Units, " + str(e))
+                else:
+                    self.setMotorStatusText()
             elif msgType == 'X':
                 self.infoMessagesEdit.append(
                     f"<span style=\" font-size:8pt; font-weight:400; color:red;\" >The device stopped the motors because it "

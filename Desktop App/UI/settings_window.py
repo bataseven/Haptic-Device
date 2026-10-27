@@ -17,7 +17,7 @@ class SettingsWindow(QWidget):
         super().__init__(parent=parent)
         self.hapticDevice = hapticDevice
         self.setAttribute(Qt.WA_DeleteOnClose)
-        loadUi(dirname(abspath(__file__)) + '\\settings_window.ui', self)
+        loadUi(dirname(abspath(__file__)) + '/settings_window.ui', self)
         self.portLabel: QLabel
         self.baudrateLabel: QLabel
         self.startChLabel: QLabel
