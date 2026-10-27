@@ -36,6 +36,7 @@ class SerialHandler : public advancedSerial {
     void parseString(char *string);
     void printGains();
     void printLimits();
+    void printModes();
     void setHapticDevice(HapticDevice* hapticDevice);
     Stream & getSerial();
 

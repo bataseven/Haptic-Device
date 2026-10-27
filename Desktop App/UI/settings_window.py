@@ -135,6 +135,15 @@ class SettingsWindow(QWidget):
         self.palmHardLowerEdit.returnPressed.connect(self.palmHardSendButton.animateClick)
         self.palmHardUpperEdit.returnPressed.connect(self.palmHardSendButton.animateClick)
 
+    @pyqtSlot(bool)
+    def onSerialConnected(self, connected: bool):
+        self.portLabel.setText(st.PORT)
+        self.baudrateLabel.setText(str(st.BAUDRATE))
+        for button in [self.fingerSoftSendButton, self.fingerHardSendButton,
+                       self.palmSoftSendButton, self.palmHardSendButton]:
+            button.setEnabled(connected)
+
+    @pyqtSlot()
     def setLimitTexts(self):
         self.fingerSoftLowerEdit.setText(
             str(int(self.hapticDevice.fingerSoftLimits[0])))

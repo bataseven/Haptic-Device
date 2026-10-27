@@ -13,6 +13,10 @@ class ConnectionStatus(Enum):
 
 
 class SerialWorker(QObject):
+    """
+    Opens, reads and writes the serial port. It runs in the GUI thread: QSerialPort reads asynchronously, so it does
+    not block the GUI, and QSerialPort must only be used from one thread.
+    """
     connectionStatusChanged = pyqtSignal(object)
     receivedMessage = pyqtSignal(str)
     sentMessage = pyqtSignal(str)
@@ -76,7 +80,8 @@ class SerialWorker(QObject):
             self.serialInRate = 0.9 * self.serialInRate + 0.1 * instantaneousRate
             self.inRate.emit(self.serialInRate)
             self.lastSerialInTime = time.time()
-            msg = msgInBytes.data().decode()
+            # Corrupted bytes are replaced instead of raising an error. The message is then shown as invalid.
+            msg = msgInBytes.data().decode(errors="replace")
             self.receivedMessage.emit(msg)
 
     def writeSerial(self, text: str, log: bool = True) -> None:
@@ -96,6 +101,7 @@ class SerialWorker(QObject):
                 f'<span style=\"font-size:8pt; font-weight:400; color:red;\" >Serial Connection: {self.serial.errorString()}</span>')
 
         if error == QSerialPort.ResourceError:
+            self.serial.close()
             self.connectionStatusChanged.emit(ConnectionStatus.ConnectionLost)
             self.serial = QSerialPort()
             self.serialInRate = 0

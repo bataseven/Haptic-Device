@@ -3,6 +3,7 @@ from PyQt5.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QDesktopWidget, Q
 from UI.control_page import ControlPage
 from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import Qt
+from PyQt5 import sip
 from os.path import dirname, abspath
 from UI.serial_commands_window import SerialCommandsWindow
 from UI.settings_window import SettingsWindow
@@ -21,7 +22,7 @@ class MainWindow(QMainWindow):
         self.setupUi()
 
         # Activate the record data menu action when the serial is connected and deactivate it when the serial is disconnected
-        self.controlPage.serialHandler.serialConnected.connect(lambda connected: self.fileMenu.actions()[2].setEnabled(connected))
+        self.controlPage.serialHandler.serialConnected.connect(self.recordDataAction.setEnabled)
 
     def setupUi(self):
         iconPath = dirname(abspath(__file__)) + "/images/assembled.png"
@@ -45,35 +46,31 @@ class MainWindow(QMainWindow):
 
         self.fileMenu.addAction("E&xit", self.close)
         self.fileMenu.addAction("Settings...", self.showSettingsDialog)
-        self.fileMenu.addAction("Record Data...", self.showRecordDataDialog).setEnabled(False)
+        self.recordDataAction = self.fileMenu.addAction("Record Data...", self.showRecordDataDialog)
+        self.recordDataAction.setEnabled(False)
 
         self.helpMenu.addAction("About...", self.about)
         self.helpMenu.addAction(
             "Show Serial Commands...", self.showSerialCommands)
 
+    @staticmethod
+    def isOpen(window: QWidget) -> bool:
+        # Windows with WA_DeleteOnClose are deleted when closed, and calling isVisible() on them would raise an error
+        return not sip.isdeleted(window) and window.isVisible()
+
     def showSettingsDialog(self):
+        if self.isOpen(self.settingsWindow):
+            self.settingsWindow.raise_()
+            self.settingsWindow.activateWindow()
+            return
+        serialHandler = self.controlPage.serialHandler
         self.settingsWindow = SettingsWindow(parent=None, hapticDevice=self.hapticDevice)
-        # Check if there is another instance of the settings window and if so, destroy it
-        self.controlPage.serialHandler.serialConnected.connect(
-            lambda _: self.settingsWindow.portLabel.setText(st.PORT))
-        self.controlPage.serialHandler.serialConnected.connect(
-            lambda _: self.settingsWindow.baudrateLabel.setText(str(st.BAUDRATE)))
-        self.settingsWindow.messageToSend.connect(lambda msg: self.controlPage.serialHandler.messageToSend.emit(msg))
+        self.settingsWindow.messageToSend.connect(serialHandler.messageToSend)
+        # Connected to the methods of the window, so the connections are removed when the window is deleted
+        serialHandler.serialConnected.connect(self.settingsWindow.onSerialConnected)
+        serialHandler.newLimits.connect(self.settingsWindow.setLimitTexts)
+        self.settingsWindow.onSerialConnected(serialHandler.isSerialConnected)
 
-        # Enable the buttons if the serial is alrady connected when the settings window is opened
-        self.settingsWindow.fingerSoftSendButton.setEnabled(self.controlPage.serialHandler.isSerialConnected)
-        self.settingsWindow.fingerHardSendButton.setEnabled(self.controlPage.serialHandler.isSerialConnected)
-        self.settingsWindow.palmSoftSendButton.setEnabled(self.controlPage.serialHandler.isSerialConnected)
-        self.settingsWindow.palmHardSendButton.setEnabled(self.controlPage.serialHandler.isSerialConnected)
-
-        self.controlPage.serialHandler.serialConnected.connect( lambda connected: self.settingsWindow.fingerSoftSendButton.setEnabled(connected))
-        self.controlPage.serialHandler.serialConnected.connect( lambda connected: self.settingsWindow.fingerHardSendButton.setEnabled(connected))
-        self.controlPage.serialHandler.serialConnected.connect( lambda connected: self.settingsWindow.palmSoftSendButton.setEnabled(connected))
-        self.controlPage.serialHandler.serialConnected.connect( lambda connected: self.settingsWindow.palmHardSendButton.setEnabled(connected))
-        self.controlPage.serialHandler.newLimits.connect(self.settingsWindow.setLimitTexts)
-
-        self.settingsWindow.destroyed.connect(lambda: self.controlPage.serialHandler.serialConnected.disconnect())
-        
         self.settingsWindow.show()
         self.centerWidgetOnScreen(self.settingsWindow)
 
@@ -82,19 +79,21 @@ class MainWindow(QMainWindow):
         self.serialCommandsWindow.show()
         self.centerWidgetOnScreen(self.serialCommandsWindow)
 
-    def showRecordDataDialog(self):       
+    def showRecordDataDialog(self):
+        if self.isOpen(self.dataRecorder):
+            self.dataRecorder.raise_()
+            self.dataRecorder.activateWindow()
+            return
+        serialHandler = self.controlPage.serialHandler
         self.dataRecorder = DataRecorder(
-            parent=self.parent(), hapticDevice=self.hapticDevice, portName=self.controlPage.serialHandler.portName)
+            parent=self.parent(), hapticDevice=self.hapticDevice, portName=serialHandler.portName)
         self.dataRecorder.show()
-        self.controlPage.serialHandler.serialConnected.connect(
-            lambda connected: self.dataRecorder.stopRecording() if not connected else None)
-        self.controlPage.serialHandler.serialConnected.connect(
-            lambda connected: self.dataRecorder.recordButton.setEnabled(connected))
-        self.controlPage.serialHandler.newData.connect(
-            self.dataRecorder.appendToFile)
+        # Connected to the methods of the recorder, so the connections are removed when it is deleted
+        serialHandler.serialConnected.connect(self.dataRecorder.onSerialConnected)
+        serialHandler.newData.connect(self.dataRecorder.appendToFile)
         self.centerWidgetOnScreen(self.dataRecorder)
-        self.dataRecorder.recordingInProgress.connect(lambda recording: self.controlPage.serialHandler.recording(recording))
-        self.dataRecorder.destroyed.connect(lambda: self.controlPage.serialHandler.recording(False))
+        # Closing the recorder stops the recording, which also resets the recording icon
+        self.dataRecorder.recordingInProgress.connect(serialHandler.recording)
 
     def closeEvent(self, event):
         # Disconnect properly, so the device disarms its host timeout and keeps working with the next program

@@ -69,6 +69,9 @@ Limits (hard or soft) for the motors: "L" + "H" or "S" + <Motor Index> + <Lower 
 
 Host timeout: "X" + <Timeout in ms>. Sent when the motors are stopped because of the host timeout.
 
+Controller mode: "M" + <Motor Index> + <Controller Mode> => "M02" (finger in force control). Sent at startup, after
+the controller mode changes, and with the gains and limits when "C1" is received.
+
 MPU6050 Euler Angles:               "E" + <Yaw> + SERIAL_SEPERATOR_CH + <Roll> + SERIAL_SEPERATOR_CH + <Pitch> =>
 "E10.2#10.2#10.2" MPU6050 Quaternions: "Q" + <Q0> + SERIAL_SEPERATOR_CH + <Q1> + SERIAL_SEPERATOR_CH + <Q2> +
 SERIAL_SEPERATOR_CH + <Q3> => "Q0.5#0.5#0.5#0.5"
@@ -162,6 +165,12 @@ void SerialHandler::parseString(char *string) {
             if (strlen(string) > 0) {
                 int app = atoi(string);
                 if (app == UNITY || app == HAPTIC_SERIAL_INTERFACE) _app = (SerialConnectionApp)app;
+                if (_app == HAPTIC_SERIAL_INTERFACE) {
+                    // Send the current state, so the interface shows it even if the device was not reset
+                    this->printGains();
+                    this->printLimits();
+                    this->printModes();
+                }
             }
             break;
 
@@ -314,6 +323,7 @@ void SerialHandler::parseString(char *string) {
             }
             this->printGains();
             this->printLimits();
+            this->printModes();
             break;
 
         case 'P':
@@ -434,6 +444,11 @@ void SerialHandler::printGains() {
         .p(_separator)
         .p(d3)
         .pln(_endMarker);
+}
+
+void SerialHandler::printModes() {
+    this->p(_startMarker).p("M0").p((int)device->finger->getControllerMode()).pln(_endMarker);
+    this->p(_startMarker).p("M1").p((int)device->palm->getControllerMode()).pln(_endMarker);
 }
 
 void SerialHandler::printLimits() {

@@ -3,7 +3,7 @@ import time
 import re
 from PyQt5.QtSerialPort import QSerialPortInfo
 from PyQt5.QtWidgets import QPushButton, QLabel, QLineEdit, QComboBox, QRadioButton, QTextEdit, QCheckBox, QWidget, QMessageBox, QFrame, QGridLayout
-from PyQt5.QtCore import pyqtSlot,  QTimer, QEventLoop, Qt, pyqtSignal, QThread
+from PyQt5.QtCore import pyqtSlot,  QTimer, QEventLoop, Qt, pyqtSignal
 from PyQt5.QtGui import QDoubleValidator, QIntValidator, QTextCursor, QPixmap
 from PyQt5.uic import loadUi  # type: ignore
 
@@ -119,9 +119,8 @@ class SerialHandler(QWidget):
         self.palmPosPrev = 0
         self.timePrev = time.time()
 
-        self.serialThread: QThread = QThread()
-        self.serialWorker: SerialWorker = SerialWorker()
-        self.serialWorker.moveToThread(self.serialThread)
+        self.serialWorker: SerialWorker = SerialWorker(self)
+        self.animator = None
 
         self.serialWorker.connectionStatusChanged.connect(
             lambda status: self.handleConnectionChanges(status))
@@ -232,7 +231,7 @@ class SerialHandler(QWidget):
         # Create a timer to periodically update the serial ports when no port is connected.
         self.refreshPortsTimer = QTimer(self)
         self.refreshPortsTimer.timeout.connect(self.refreshSerialPorts)
-        self.refreshPortsInterval = 100  # ms
+        self.refreshPortsInterval = 1000  # ms
         self.refreshPortsTimer.start(self.refreshPortsInterval)
 
         self.portsCombo.setEditable(True)
@@ -273,10 +272,12 @@ class SerialHandler(QWidget):
         # self.layout().addWidget(self.collapsibleMessageBox)
         
         self.setupUI()
-        self.serialThread.start()
-        self.serialThread.setPriority(QThread.TimeCriticalPriority)
 
     def setupUI(self) -> None:
+        # Keep only the latest messages, so the logs don't grow without limit during long sessions
+        self.messagesEdit.document().setMaximumBlockCount(1000)
+        self.infoMessagesEdit.document().setMaximumBlockCount(1000)
+
         self.baudrateEdit.setValidator(
             QIntValidator(self, bottom=0, top=1000000000))
 
@@ -325,23 +326,23 @@ class SerialHandler(QWidget):
     def refreshSerialPorts(self) -> None:
         availablePorts = [port.portName()
                           for port in QSerialPortInfo.availablePorts()]
-        for port in availablePorts:
-            self.connectSerialButton.setEnabled(True)
-            # Add the port to the combo box if it is not already there.
-            if self.portsCombo.findText(port) == -1:
-                self.portsCombo.addItem(port)
-                self.portsCombo.setEnabled(True)
 
-        for i in range(self.portsCombo.count()):
-            # Remove the port from the combo box if it no longer exists.
+        # Remove the ports that no longer exist. Going backwards, so removing an item doesn't skip the next one.
+        for i in reversed(range(self.portsCombo.count())):
             if self.portsCombo.itemText(i) not in availablePorts:
                 self.portsCombo.removeItem(i)
 
+        # Add the ports that are not in the combo box yet.
+        for port in availablePorts:
+            if self.portsCombo.findText(port) == -1:
+                self.portsCombo.addItem(port)
+
         # If no ports are available, disable the connect button.
-        if availablePorts == []:
-            self.connectSerialButton.setEnabled(False)
+        hasPorts = len(availablePorts) > 0
+        if not hasPorts:
             self.portsCombo.addItem("No ports detected")
-            self.portsCombo.setEnabled(False)
+        self.portsCombo.setEnabled(hasPorts)
+        self.connectSerialButton.setEnabled(hasPorts)
 
     def handleConnectionChanges(self, status: ConnectionStatus) -> None:
         if status == ConnectionStatus.Disconnected:  # When the serial is closed
@@ -584,6 +585,23 @@ class SerialHandler(QWidget):
                         "Net Force", self.hapticDevice.netForce)
             elif msgType == 'Q':
                 pass
+            elif msgType == 'M':
+                # The controller mode of a motor. The device sends it when the app connects and when the mode changes.
+                try:
+                    motorIndex = int(msg[0])
+                    mode = int(msg[1:])
+                    if mode not in (0, 1, 2):
+                        raise ValueError(f"unknown mode {mode}")
+                    if motorIndex == 0:
+                        self.hapticDevice.fingerControlMode = mode
+                    elif motorIndex == 1:
+                        self.hapticDevice.palmControlMode = mode
+                except Exception as e:
+                    self.infoMessagesEdit.append(
+                        "Error Parsing: Controller Mode, " + str(e))
+                else:
+                    self.setMotorStatusText()
+                    self.setGainPlaceholders()
             elif msgType == 'X':
                 self.infoMessagesEdit.append(
                     f"<span style=\" font-size:8pt; font-weight:400; color:red;\" >The device stopped the motors because it "
@@ -872,15 +890,20 @@ class SerialHandler(QWidget):
         self.showRec1 = not self.showRec1
 
     def openAnimator(self):
+        # Only one plot window at a time
+        if self.animator is not None:
+            self.animator.raise_()
+            self.animator.activateWindow()
+            return
         self.animator = QAnimator()
-        self.dataToPlot.connect(
-            lambda label, data: self.animator.updateData(label, data))
-            # self.serialWorker.connectionStatusChanged.connect(
-        # lambda status: self.animator.close() if status != ConnectionStatus.Connected else None)
+        # Connected to the methods of the animator, so the connections are removed when it is closed and deleted
+        self.dataToPlot.connect(self.animator.updateData)
         self.newData.connect(self.animator.updateDataCount)
         self.serialWorker.inRate.connect(self.animator.setInRate)
-        self.animator.destroyed.connect(self.dataToPlot.disconnect)
-        # self.layout().addWidget(self.animator)
+        self.animator.destroyed.connect(self.onAnimatorDestroyed)
+
+    def onAnimatorDestroyed(self):
+        self.animator = None
 
     def setDebug(self):
         if not self.debug:

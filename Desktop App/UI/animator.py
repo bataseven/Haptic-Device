@@ -2,6 +2,7 @@ from collections import deque
 import random
 import matplotlib.pyplot as plt
 from matplotlib import rcParams
+from matplotlib.figure import Figure
 import matplotx
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas, NavigationToolbar2QT as NavigationToolbar
 from os.path import dirname, abspath
@@ -44,7 +45,8 @@ class QAnimator(QWidget):
         self.minY = -1
         self.autoScaleY = True
 
-        self.figure = plt.figure()
+        # Not plt.figure(), which keeps every figure in memory until it is closed through pyplot
+        self.figure = Figure()
         self.canvas = FigureCanvas(self.figure)
         self.toolbar = NavigationToolbar(self.canvas, self, False)
         self.setMinimumSize(800, 600)
@@ -130,6 +132,7 @@ class QAnimator(QWidget):
 
         self.canvas.draw_idle()
 
+    @pyqtSlot(str, float)
     def updateData(self, label: str, value: float):
         # The data is not new, no need to add a button and line to the plot. Only add the value to deque.
         if(label in self.data.keys()):
@@ -217,9 +220,11 @@ class QAnimator(QWidget):
             self.axes.autoscale_view()
             self.canvas.draw_idle()
 
+    @pyqtSlot()
     def updateDataCount(self):
         self.count += 1
 
+    @pyqtSlot(float)
     def setInRate(self, rate):
         self.rate = rate
 

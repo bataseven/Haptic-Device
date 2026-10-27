@@ -43,6 +43,7 @@ class SerialCommandsWindow(QWidget):
         <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>Desired Finger Force</u><br><b>Message Type:</b> D + DesiredForce <br><b>Example:</b> <em>D4.5</em> </span></p>\
         <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>IMU Euler Angles</u><br><b>Message Type:</b> E + Yaw + # + Roll + # + Pitch <br><b>Example:</b> <em>E10.5#3.5#128.3</em> </span></p>\
         <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>PID Gains of Position Velocity and Force Controllers </u><br><b>Message Type:</b> K + MotorIndex + Kp1 + # + Ki1 + # + Kd1 + # + Kp2 + # + Ki2 + # + Kd2 + # + Kp3 + # + Ki3 + # + Kd3<br><b>Example:</b> <em>K01.00#0.00#6.00#0.05#0.01#0.00#1000.00#5.00#100.00</em></span></p>\
+        <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>Controller mode of a motor (0: position, 1: velocity, 2: force)</u><br><b>Message Type:</b> M + MotorIndex + ControllerMode <br><b>Example:</b> <em>M02</em> </span></p>\
         <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>Motors stopped because no message was received for the host timeout</u><br><b>Message Type:</b> X + TimeoutInMs <br><b>Example:</b> <em>X1000</em> </span></p>\
         </body></html>"
 

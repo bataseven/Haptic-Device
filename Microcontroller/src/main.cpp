@@ -90,6 +90,7 @@ void setup() {
     SH.setHapticDevice(device);
     SH.printGains();
     SH.printLimits();
+    SH.printModes();
     // SH.setDebug(true);
     SH.setPrintFrequency(40);  // 40 // 35 // 40
 #endif

@@ -86,6 +86,13 @@ class DataRecorder(QWidget):
         if self.isRecording:
             return
         try:
+            duration = float(self.saveDurationEdit.text())
+        except ValueError:
+            duration = 0
+        if duration <= 0:
+            QMessageBox.warning(self, "Data Recorder", "Enter the recording duration in seconds.")
+            return
+        try:
             # Include current date in the file name
             self.fileName = "\\HapticDeviceData_" + self.portName + "_" +\
                 time.strftime("%Y-%m-%d_%H-%M-%S") + ".csv"
@@ -103,8 +110,7 @@ class DataRecorder(QWidget):
         self.savePathEdit.setEnabled(False)
         self.recordButton.setText("Stop")
 
-        self.recordTimer.timeout.connect(self.stopRecording)
-        self.recordTimer.start(int(float(self.saveDurationEdit.text()) * 1000))
+        self.recordTimer.start(int(duration * 1000))
         self.progressBarTimer.start(100)
 
         self.isRecording = True
@@ -139,6 +145,13 @@ class DataRecorder(QWidget):
         dialog.setIcon(QMessageBox.Information)
         dialog.exec_()
 
+    @pyqtSlot(bool)
+    def onSerialConnected(self, connected: bool):
+        if not connected:
+            self.stopRecording()
+        self.recordButton.setEnabled(connected)
+
+    @pyqtSlot()
     def appendToFile(self):
         if not self.isRecording:
             return
