@@ -17,6 +17,25 @@ if __name__ == "__main__":
 else:
     from .devices import HapticDevice
 
+# The header and the rows are both built from these lists so that the column names always match the values.
+GAIN_COLUMNS = ["PID Position P", "PID Position I", "PID Position D",
+                "PID Velocity P", "PID Velocity I", "PID Velocity D",
+                "PID Force P", "PID Force I", "PID Force D"]
+# (Key in HapticDevice.waveformParams, column name)
+WAVE_COLUMNS = [('T', "Wave Type"), ('F', "Wave Frequency"), ('A', "Wave Amplitude"),
+                ('O', "Wave Offset"), ('V', "Wave Value")]
+FORCE_COLUMNS = ["Thumb Outer Force", "Thumb Inner Force", "Index Inner Force", "Index Outer Force"]
+
+
+def motorColumns(motor: str) -> list:
+    return [f"{motor} Position", f"{motor} Velocity", f"{motor} Control Mode"] + \
+        [f"{motor} {name}" for name in GAIN_COLUMNS] + \
+        [f"{motor} {name}" for _, name in WAVE_COLUMNS]
+
+
+HEADER = ["Data Point", "Time"] + motorColumns("Finger") + motorColumns("Palm") + FORCE_COLUMNS
+SEPARATOR = ", "
+
 
 class DataRecorder(QWidget):
     recordingInProgress = pyqtSignal(bool)
@@ -72,47 +91,7 @@ class DataRecorder(QWidget):
                 time.strftime("%Y-%m-%d_%H-%M-%S") + ".csv"
             self.fullPath = self.savePathEdit.text() + self.fileName
             with open(self.fullPath, "w") as file:
-                file.write(
-                    "Data Point, \
-Time, \
-Finger Position, \
-Finger Velocity, \
-Finger Control Mode, \
-Finger PID Position P, \
-Finger PID Position I, \
-Finger PID Position D, \
-Finger PID Velocity P, \
-Finger PID Velocity I, \
-Finger PID Velocity D, \
-Finger PID Force P, \
-Finger PID Force I, \
-Finger PID Force D, \
-Finger Wave Type, \
-Finger Wave Amplitude, \
-Finger Wave Frequency, \
-Finger Wave Offset, \
-Finger Wave Value, \
-Palm Position, \
-Palm Velocity, \
-Palm Control Mode, \
-Palm PID Position P, \
-Palm PID Position I, \
-Palm PID Position D, \
-Palm PID Velocity P, \
-Palm PID Velocity I, \
-Palm PID Velocity D, \
-Palm PID Force P, \
-Palm PID Force I, \
-Palm PID Force D, \
-Palm Wave Type, \
-Palm Wave Amplitude, \
-Palm Wave Frequency, \
-Palm Wave Offset, \
-Palm Wave Value, \
-Thumb Outer Force, \
-Thumb Inner Force, \
-Index Inner Force, \
-Index Outer Force\n")
+                file.write(SEPARATOR.join(HEADER) + "\n")
         except Exception as e:
             print(e)
             return
@@ -153,7 +132,7 @@ Index Outer Force\n")
         # Pop a message box to inform the user that the recording is done
         dialog = QMessageBox(parent=None)
         dialog.setText(
-            f"{self.dataPoints + 1} data point" + ("s" if self.dataPoints + 1 > 1 else "") + f" saved to {self.fullPath}")
+            f"{self.dataPoints} data point" + ("" if self.dataPoints == 1 else "s") + f" saved to {self.fullPath}")
         dialog.setWindowTitle("Recording done")
         dialog.setWindowIcon(self.windowIcon())
         dialog.setStandardButtons(QMessageBox.Ok)
@@ -167,35 +146,16 @@ Index Outer Force\n")
         # Note that the current time may not accurately represent the time at which the data was received.
         # Because this function is called after couple of signals were emited from different QObjects.
         currentTime = time.time()
-        fingerPos = self.hapticDevice.fingerPos
-        fingerVel = self.hapticDevice.fingerVel
-        fingerControlMode = self.hapticDevice.fingerControlMode
-        fingerGains = self.hapticDevice.fingerGains
-        fingerWaveParams = self.hapticDevice.waveformParams[0]
-
-        palmPos = self.hapticDevice.palmPos
-        palmVel = self.hapticDevice.palmVel
-        palmControlMode = self.hapticDevice.palmControlMode
-        palmGains = self.hapticDevice.palmGains
-        palmWaveParams = self.hapticDevice.waveformParams[1]
-
-        forceValues = self.hapticDevice.forceValues
+        device = self.hapticDevice
+        values = [self.dataPoints, f"{currentTime:.3f}"]
+        values += [device.fingerPos, device.fingerVel, device.fingerControlMode, *device.fingerGains]
+        values += [device.waveformParams[0][key] for key, _ in WAVE_COLUMNS]
+        values += [device.palmPos, device.palmVel, device.palmControlMode, *device.palmGains]
+        values += [device.waveformParams[1][key] for key, _ in WAVE_COLUMNS]
+        values += device.forceValues
 
         with open(self.fullPath, "a") as file:
-            file.write(f"\
-{self.dataPoints}, \
-{currentTime:.3f}, \
-{fingerPos}, \
-{fingerVel}, \
-{fingerControlMode}, \
-{','.join(str(value) for value in fingerGains)}, \
-{','.join(str(value) for value in [*fingerWaveParams.values()])}, \
-{palmPos}, \
-{palmVel}, \
-{palmControlMode}, \
-{','.join(str(value) for value in palmGains)}, \
-{','.join(str(value) for value in [*palmWaveParams.values()])}, \
-{','.join([str(force) for force in forceValues])}\n")
+            file.write(SEPARATOR.join(str(value) for value in values) + "\n")
 
         self.dataPoints += 1
 

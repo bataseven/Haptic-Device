@@ -469,7 +469,7 @@ class SerialHandler(QWidget):
             print(line)
             return
 
-        self.newData.emit()
+        hasStatus = False
         for i, match in enumerate(matches):
             msg = match[0]
             if not (msg[0] == st.SERIAL_START_CH and msg[-1] == st.SERIAL_END_CH) and not self.debug:
@@ -530,6 +530,7 @@ class SerialHandler(QWidget):
                     self.infoMessagesEdit.append(
                         "Error Parsing: Haptic, " + str(e))
                 else:
+                    hasStatus = True
                     if motorIndex == 0:
                         self.dataToPlot.emit(
                             "Finger Position", self.hapticDevice.fingerPos)
@@ -596,6 +597,11 @@ class SerialHandler(QWidget):
                 self.setWaveStatusText()
             if msgType == 'N' or msgType == 'F':
                 self.setForceStatusText()
+
+        # Emitted after the whole line is parsed so that listeners (e.g. the data recorder) get this line's values.
+        # Lines without a status message (e.g. gains or limits) are not new data points.
+        if hasStatus:
+            self.newData.emit()
 
     def setGainPlaceholders(self) -> None:
         self.KpEdit.setText("")
