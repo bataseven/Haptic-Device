@@ -34,10 +34,26 @@ unsigned long loopTimes[maxLoopIndex];
 int loopTimeIndex = 0;
 
 IntervalTimer controlLoopTimer;
+volatile uint32_t controlLoopCount = 0;  // Incremented by the control loop, so loop() can see that it is running.
 
 void ControlLoopRoutine() {
     device->fingerControlLoop();
     device->palmControlLoop();
+    controlLoopCount++;
+}
+
+// Starts the watchdog of the microcontroller (WDOG1). If it is not fed for 1 second, it resets the microcontroller.
+// During the reset the motor driver inputs are not driven, so the motors are not powered.
+void startWatchdog() {
+    CCM_CCGR3 |= CCM_CCGR3_WDOG1(3);  // Enable the clock of the watchdog
+    WDOG1_WMCR = 0;                   // Disable the power down counter, which would reset after 16 seconds
+    // The timeout is (WT + 1) * 0.5 seconds. "|=" keeps the SRS and WDA bits set, writing 0 to them resets the board.
+    WDOG1_WCR |= WDOG_WCR_WT(1) | WDOG_WCR_WDE;
+}
+
+void feedWatchdog() {
+    WDOG1_WSR = 0x5555;
+    WDOG1_WSR = 0xAAAA;
 }
 
 void setup() {
@@ -83,6 +99,8 @@ void setup() {
 
     controlLoopTimer.begin(ControlLoopRoutine, 1000000.0 / CONTROL_LOOP_FREQUENCY);
     controlLoopTimer.priority(254);
+
+    startWatchdog();
 }
 
 void loop() {
@@ -113,5 +131,13 @@ void loop() {
 #endif
     // Make the device blink in a specific pattern to indicate the loop is running properly.
     analogWrite(LED_BUILTIN, (millis() / 100 % 25 == 0 || ((millis() + 200) / 100) % 25 == 0) ? 127 : 0);
+
+    // Feed the watchdog only if the control loop has also run since the last time, so it resets the board if either
+    // this loop or the control loop stops.
+    static uint32_t lastControlLoopCount = 0;
+    if (controlLoopCount != lastControlLoopCount) {
+        lastControlLoopCount = controlLoopCount;
+        feedWatchdog();
+    }
 }
 #endif

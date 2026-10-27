@@ -43,6 +43,7 @@ class SerialCommandsWindow(QWidget):
         <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>Desired Finger Force</u><br><b>Message Type:</b> D + DesiredForce <br><b>Example:</b> <em>D4.5</em> </span></p>\
         <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>IMU Euler Angles</u><br><b>Message Type:</b> E + Yaw + # + Roll + # + Pitch <br><b>Example:</b> <em>E10.5#3.5#128.3</em> </span></p>\
         <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>PID Gains of Position Velocity and Force Controllers </u><br><b>Message Type:</b> K + MotorIndex + Kp1 + # + Ki1 + # + Kd1 + # + Kp2 + # + Ki2 + # + Kd2 + # + Kp3 + # + Ki3 + # + Kd3<br><b>Example:</b> <em>K01.00#0.00#6.00#0.05#0.01#0.00#1000.00#5.00#100.00</em></span></p>\
+        <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>Motors stopped because no message was received for the host timeout</u><br><b>Message Type:</b> X + TimeoutInMs <br><b>Example:</b> <em>X1000</em> </span></p>\
         </body></html>"
 
         text3 = "<html><head/><body>\
@@ -55,6 +56,8 @@ class SerialCommandsWindow(QWidget):
         <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>To change the controller mode</u><br><b>Message Type:</b> O + MotorIndex + ControllerMode <br><b>Example:</b> <em>O10</em> </span></p>\
         <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>To set a virtual object</u><br><b>Message Type:</b> P + NominalWidth + # + Stiffness + # + Damping<br><b>Example:</b> <em>P50000#2.5#0.1</em> </span></p>\
         <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>To set serial debug mode</u><br><b>Message Type:</b> B + DebugMode <br><b>Example:</b> <em>B0</em> </span></p>\
+        <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>To stop the motors if no message is received for a time (0 disarms)</u><br><b>Message Type:</b> T + TimeoutInMs <br><b>Example:</b> <em>T1000</em> </span></p>\
+        <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>Heartbeat, sent periodically so the timeout does not fire</u><br><b>Message Type:</b> A <br><b>Example:</b> <em>A</em> </span></p>\
         </body></html>"
 
         self.label1.setAlignment(Qt.AlignJustify)

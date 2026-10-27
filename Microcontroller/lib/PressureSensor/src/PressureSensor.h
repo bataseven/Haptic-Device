@@ -44,9 +44,10 @@ class PressureSensor {
     static int maxInput;
 
    private:
-    int _calibrate(
-        double);  // First time getForce() is called, it will return 0. This function is called to calibrate the sensor.
+    void _calibrate();                   // Called by update() until the sensor is calibrated
+    double _uncalibratedForce(float);    // Force in Newtons for a reading, without the calibration offset
     bool _calibrated = false;            // True if the sensor has been calibrated
+    int _updateCount = 0;                // Number of update() calls before the calibration starts
     int _calibrationCount = 0;           // Keep track of the calibration readings
     int _maxNumberOfCalibrations = 200;  // Number of calibration readings
     double _calibrationSum = 0;          // Sum of the calibration readings
@@ -58,7 +59,6 @@ class PressureSensor {
     int _reading = 0;                    // Latest reading
     int _readingAveraged = 0;            // Average of the latest readings
     int* _lastReadings;                  // Array of the latest readings
-    float _R1 = 0;                       // Resistance of the sensor in Ohms
     float _R2 = 2000;                    // Resistance of the voltage divider in Ohms
     float _Vs = 3.3;                     // Voltage of the power supply in Volts
     float _a = 1069;                     // Coefficient a of the force formula

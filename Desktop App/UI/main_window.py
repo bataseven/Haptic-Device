@@ -97,6 +97,8 @@ class MainWindow(QMainWindow):
         self.dataRecorder.destroyed.connect(lambda: self.controlPage.serialHandler.recording(False))
 
     def closeEvent(self, event):
+        # Disconnect properly, so the device disarms its host timeout and keeps working with the next program
+        self.controlPage.serialHandler.serialWorker.disconnectSerial()
         for window in QApplication.topLevelWidgets():
             window.close()
 

@@ -25,19 +25,26 @@ void PressureSensor::update() {
     _reading = analogRead(_pinToRead);
     _lastReadings[_readingIndex] = _reading >= _zeroLevelNoise ? _reading : 0;
     _readingIndex = _readingIndex + 1 == _windowSize ? 0 : _readingIndex + 1;
+    if (!_calibrated) _calibrate();
 }
 
 // Returns a force estimate in Newtons from readings.
 // If no argument is passed, force is calculated from the average of the latest readings.
-double PressureSensor::getForce(bool calculateAverage = true) {
+// Returns 0 until the sensor is calibrated.
+double PressureSensor::getForce(bool calculateAverage) {
     float reading = calculateAverage ? this->getAverageReading() : this->getReading();
-    if (reading < 0.5) return 0;                     // Prevent divide by zero
-    float Vout = _Vs * reading / maxInput;           // Output voltage of the voltage divider
-    _R1 = (_Vs * _R2) / Vout - _R2;                  // Resistance of the sensor
-    double grams = _a * pow(_R1 / 1000.0, _b) + _c;  // Calculate force in grams, Curve is fitted in kOhms and grams
-    double force = grams * 0.009816;                 // Convert to Newtons
+    if (reading < 0.5 || !_calibrated) return 0;
+    return _uncalibratedForce(reading) - _calibrationOffset;
+}
 
-    return _calibrated ? force - _calibrationOffset : _calibrate(force);
+// Converts a reading to a force in Newtons with the fitted curve, without the calibration offset.
+double PressureSensor::_uncalibratedForce(float reading) {
+    // Without a reading, the resistance of the sensor is infinite and the curve is equal to _c.
+    if (reading < 0.5) return _c * 0.009816;            // Prevent divide by zero
+    float Vout = _Vs * reading / maxInput;              // Output voltage of the voltage divider
+    float R1 = (_Vs * _R2) / Vout - _R2;                // Resistance of the sensor
+    double grams = _a * pow(R1 / 1000.0, _b) + _c;      // Calculate force in grams, Curve is fitted in kOhms and grams
+    return grams * 0.009816;                            // Convert to Newtons
 }
 
 // Returns the latest read value from the analog pin
@@ -73,13 +80,11 @@ void PressureSensor::setR2(float R2) { _R2 = R2; }
 
 // Calibrates the sensor by taking the average of the first _maxNumberOfCalibrations readings.
 // This function does not necessarily need to be called.
-// If it is not called, the sensor will be calibrated after the first _maxNumberOfCalibrations getForce() calls.
-// It only calibrates the force offset.
+// If it is not called, the sensor will be calibrated during the first update() calls.
+// It only calibrates the force offset, so nothing should touch the sensor while it is calibrating.
 void PressureSensor::calibrate() {
-    if (_calibrated) return;  // If already calibrated, do nothing
     while (!_calibrated) {
         this->update();
-        this->getForce(true);
         delay(1);
     }
 }
@@ -87,16 +92,20 @@ void PressureSensor::calibrate() {
 // Returns true if the sensor is calibrated
 bool PressureSensor::isCalibrated() { return _calibrated; }
 
-// First time getForce() is called, it will return 0. This function is called to calibrate the sensor.
-int PressureSensor::_calibrate(double force) {
-    if (_calibrationCount < _maxNumberOfCalibrations) {
-        _calibrationSum += force;
-        _calibrationCount++;
-        digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
-    } else {
-        _calibrationOffset = _calibrationSum / _maxNumberOfCalibrations;
-        _calibrated = true;
-        digitalWrite(LED_BUILTIN, LOW);
+// Called by update() until the sensor is calibrated. The offset is the average force of the first
+// _maxNumberOfCalibrations readings, after the moving average window is filled.
+// Readings of 0 are included, so the offset is set right away even if the sensor reads 0 when nothing touches it.
+void PressureSensor::_calibrate() {
+    if (_updateCount < _windowSize) {  // Wait until the moving average window is filled
+        _updateCount++;
+        return;
     }
-    return 0;
+    _calibrationSum += _uncalibratedForce(this->getAverageReading());
+    _calibrationCount++;
+    if (_calibrationCount >= _maxNumberOfCalibrations) {
+        noInterrupts();  // getForce() is also called from the control loop interrupt, which must see both together
+        _calibrationOffset = _calibrationSum / _calibrationCount;
+        _calibrated = true;
+        interrupts();
+    }
 }

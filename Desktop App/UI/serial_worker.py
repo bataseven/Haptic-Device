@@ -27,11 +27,7 @@ class SerialWorker(QObject):
 
     def connectSerial(self, port: str, baudrate: int) -> bool:
         if self.serial.isOpen():
-            self.serialInRate = 0
-            self.writeSerial("C0")
-            self.serial.flush()
-            self.serial.close()
-            self.connectionStatusChanged.emit(ConnectionStatus.Disconnected)
+            self.disconnectSerial()
             return
 
         try:
@@ -56,6 +52,18 @@ class SerialWorker(QObject):
         self.serial.setDataTerminalReady(True)
         self.serial.flush()
         self.writeSerial("C1")
+        # Ask the device to stop the motors if this app stops sending messages, e.g. when it crashes.
+        self.writeSerial(f"T{st.HOST_TIMEOUT_MS}")
+
+    def disconnectSerial(self) -> None:
+        if not self.serial.isOpen():
+            return
+        self.serialInRate = 0
+        self.writeSerial("T0")  # Disarm the timeout, so the device keeps working with the next program
+        self.writeSerial("C0")
+        self.serial.waitForBytesWritten(100)
+        self.serial.close()
+        self.connectionStatusChanged.emit(ConnectionStatus.Disconnected)
 
     @pyqtSlot()
     def readSerial(self):
@@ -71,13 +79,14 @@ class SerialWorker(QObject):
             msg = msgInBytes.data().decode()
             self.receivedMessage.emit(msg)
 
-    def writeSerial(self, text: str) -> None:
+    def writeSerial(self, text: str, log: bool = True) -> None:
         if not self.serial.isOpen():
             self.infoMessages.emit("Error Sending: Not Connected")
             return
         self.serial.write(
             (st.SERIAL_START_CH + text + st.SERIAL_END_CH).encode())
-        self.sentMessage.emit(text)
+        if log:
+            self.sentMessage.emit(text)
 
     @pyqtSlot(QSerialPort.SerialPortError)
     def errorSerial(self, error: QSerialPort.SerialPortError):

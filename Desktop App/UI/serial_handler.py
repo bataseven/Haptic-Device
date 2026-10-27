@@ -145,6 +145,10 @@ class SerialHandler(QWidget):
 
         self.recordingIconTimer: QTimer = QTimer()
 
+        # Tells the device that this app is still running. The device stops the motors if the messages stop.
+        self.heartbeatTimer = QTimer(self)
+        self.heartbeatTimer.timeout.connect(lambda: self.serialWorker.writeSerial("A", log=False))
+
         # Put all serial related buttons in a list to enable/disable them
         self.serialButtons = [self.refreshPortsButton, self.animatorButton, self.stopFingerButton, self.stopPalmButton, self.positionControlButton, self.velocityControlButton, self.debugButton,
                               self.forceControlButton, self.waveSendButton, self.freqSendButton, self.ampSendButton, self.offsetSendButton, self.objectSendButton, self.KpSendButton, self.KiSendButton, self.KdSendButton, self.saveEEPROMButton]
@@ -341,6 +345,7 @@ class SerialHandler(QWidget):
 
     def handleConnectionChanges(self, status: ConnectionStatus) -> None:
         if status == ConnectionStatus.Disconnected:  # When the serial is closed
+            self.heartbeatTimer.stop()
             self.connectSerialButton.setEnabled(False)
             self.serialMessagesLabel.setText("SERIAL MESSAGES")
             for button in self.serialButtons:
@@ -377,11 +382,13 @@ class SerialHandler(QWidget):
             st.BAUDRATE = str(self.serialWorker.serial.baudRate())
             self.serialConnected.emit(True)
             self.isSerialConnected = True
+            self.heartbeatTimer.start(st.HEARTBEAT_INTERVAL_MS)
 
             for button in self.serialButtons:
                 button.setEnabled(True)
 
         elif status == ConnectionStatus.ConnectionLost:
+            self.heartbeatTimer.stop()
             self.connectSerialButton.setText("Connect")
             self.stopFingerButton.setChecked(False)
             self.stopFingerButton.setText("STOP FINGER")
@@ -577,6 +584,15 @@ class SerialHandler(QWidget):
                         "Net Force", self.hapticDevice.netForce)
             elif msgType == 'Q':
                 pass
+            elif msgType == 'X':
+                self.infoMessagesEdit.append(
+                    f"<span style=\" font-size:8pt; font-weight:400; color:red;\" >The device stopped the motors because it "
+                    f"received no message from this app for {msg} ms. Its waveforms and virtual object were reset.</span>")
+                for params in self.hapticDevice.waveformParams:
+                    params.update({'T': 'CONSTANT', 'F': 0, 'A': 0, 'O': 0})
+                self.setWaveStatusText()
+                # The device disarms the timeout when it fires, so arm it again
+                self.messageToSend.emit(f"T{st.HOST_TIMEOUT_MS}")
             elif msgType == 'W':
                 try:
                     generatorValue = int(msg[0])

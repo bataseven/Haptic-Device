@@ -113,6 +113,11 @@ void HapticDevice::_LEDUpdate() {
         _currentColor = GREEN;
     }
 
+    if (hostTimedOut) { // If the motors were stopped because the host stopped sending messages, light up purple
+        led.setPixelColor(0, PURPLE);
+        _currentColor = PURPLE;
+    }
+
     if (obj.inContact) { // If an object is in contact, light up blue
         led.setPixelColor(0, BLUE);
         _currentColor = BLUE;
@@ -310,6 +315,33 @@ void HapticDevice::palmControlLoop() {
     else if (palmButtonState == FunctionalButton::DoubleHold && !fingerButton->read()) // Move down
         palm->home();
     // palm->forceRotate(1, 1);
+}
+
+// Called when the host stops sending messages. Releases the motors and clears the commands of the host, so that the
+// device does not continue a waveform or a virtual object without a host watching it.
+void HapticDevice::stopForHostTimeout() {
+    noInterrupts();  // The control loop interrupt uses these
+    hostTimedOut = true;
+    finger->softStop = true;
+    palm->softStop = true;
+    obj = PseudoObject();
+    interrupts();
+
+    WaveformGenerator *generators[] = {&waveformGeneratorFinger, &waveformGeneratorPalm};
+    for (WaveformGenerator *generator : generators) {
+        generator->setType(WaveformGenerator::WaveType::CONSTANT);
+        generator->setFrequency(0);
+        generator->setAmplitude(0);
+        generator->setOffset(0);
+    }
+}
+
+void HapticDevice::resumeAfterHostTimeout() {
+    noInterrupts();
+    hostTimedOut = false;
+    finger->softStop = false;
+    palm->softStop = false;
+    interrupts();
 }
 
 void HapticDevice::resetFingerEncoder() { finger->resetEncoderPos(); }

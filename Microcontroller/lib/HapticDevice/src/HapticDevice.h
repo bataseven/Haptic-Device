@@ -138,6 +138,8 @@ class HapticDevice {
 
     bool steadyState = false;
 
+    bool hostTimedOut = false;  // True while the motors are stopped because the host stopped sending messages
+
     void initialize();
     void update();
     void fingerControlLoop();
@@ -145,6 +147,9 @@ class HapticDevice {
 
     static void resetFingerEncoder();
     static void resetPalmEncoder();
+
+    void stopForHostTimeout();
+    void resumeAfterHostTimeout();
 
     void setSerial(Stream& serial);
 };

@@ -107,7 +107,8 @@ class MotorWithEncoder {
     int _velocityWindowLength = 150;  //5// Empirically determined
     int _accelerationWindowLength = 5;
     int _accelerationIndex = 0;
-    int64_t _velocity = 0;  // Unit is encoder count per second
+    // Unit is encoder count per second. 32 bits, so that the control loop interrupt never reads a half-written value.
+    int32_t _velocity = 0;
     int32_t _velocityDesired = 0;
     int32_t _velocityPrevious = 0;
     int32_t _velocityErrorPrevious = 0;

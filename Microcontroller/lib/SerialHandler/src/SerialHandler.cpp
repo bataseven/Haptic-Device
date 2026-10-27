@@ -35,6 +35,13 @@ To home the motors: "H" + <Motor Index> => "H1"
 
 To toggle set the serial handler debug mode: "B" + <Debug Mode> => "B1" or "B0"
 
+To arm the host timeout: "T" + <Timeout in ms> => "T1000". "T0" disarms it. While armed, if no message is received for
+the timeout, the motors are released, the waveforms are set to constant 0, the virtual object is removed and the timeout
+is disarmed. The motors stay released until the next message of any kind. It is not armed by default, so hosts that
+never send "T" are not affected.
+
+Heartbeat: "A". Does nothing, but like any message it resets the host timeout.
+
 
   - While receiving from haptic device:
 
@@ -60,6 +67,8 @@ Desired Finger Force:               "D" + <Desired Finger Force>
 Limits (hard or soft) for the motors: "L" + "H" or "S" + <Motor Index> + <Lower Limit> + # + <Upper Limit> =>
 "LS01000#2000"
 
+Host timeout: "X" + <Timeout in ms>. Sent when the motors are stopped because of the host timeout.
+
 MPU6050 Euler Angles:               "E" + <Yaw> + SERIAL_SEPERATOR_CH + <Roll> + SERIAL_SEPERATOR_CH + <Pitch> =>
 "E10.2#10.2#10.2" MPU6050 Quaternions: "Q" + <Q0> + SERIAL_SEPERATOR_CH + <Q1> + SERIAL_SEPERATOR_CH + <Q2> +
 SERIAL_SEPERATOR_CH + <Q3> => "Q0.5#0.5#0.5#0.5"
@@ -67,6 +76,7 @@ SERIAL_SEPERATOR_CH + <Q3> => "Q0.5#0.5#0.5#0.5"
 void SerialHandler::update() {
     _printPeriodically(_printFrequency, _debug);
     _receiveNonBlocking();
+    _checkHostTimeout();
     // Activate interrupts if the serial port is closed
     // if(!*this->_serial) {
     //     digitalWrite(13, HIGH);
@@ -108,6 +118,8 @@ void SerialHandler::_receiveNonBlocking() {
             _receivedChars[ndx] = '\0';  // terminate the string when the end marker arrives
             recvInProgress = false;
             ndx = 0;
+            _lastMessageTime = millis();
+            if (device->hostTimedOut) device->resumeAfterHostTimeout();  // A host is sending messages again
             this->parseString(_receivedChars);
         }
     }
@@ -115,6 +127,15 @@ void SerialHandler::_receiveNonBlocking() {
     else if (rc == _startMarker) {
         recvInProgress = true;
     }
+}
+
+// Reads the next token of strtok() as a number. Pass the string for the first token and NULL for the next ones.
+// Returns false if the token is missing or is not a finite number, so a malformed message can be ignored.
+static bool nextNumber(char *string, const char *separator, double &value) {
+    char *token = strtok(string, separator);
+    if (token == NULL) return false;
+    value = atof(token);
+    return isfinite(value);
 }
 
 void SerialHandler::parseString(char *string) {
@@ -127,19 +148,35 @@ void SerialHandler::parseString(char *string) {
         // Gripper state messages start with G
         case 'G':
             if (strlen(string) > 0) {
-                char *token = strtok(string, seperator);
-                device->wsg50.width = atof(token);
-                token = strtok(NULL, seperator);
-                device->wsg50.speed = atof(token);
-                token = strtok(NULL, seperator);
-                device->wsg50.force = atof(token);
+                double width, speed, force;
+                if (!nextNumber(string, seperator, width) || !nextNumber(NULL, seperator, speed) ||
+                    !nextNumber(NULL, seperator, force))
+                    break;
+                device->wsg50.width = width;
+                device->wsg50.speed = speed;
+                device->wsg50.force = force;
             }
             break;
 
         case 'C':
             if (strlen(string) > 0) {
-                _app = (SerialConnectionApp)atoi(string);
+                int app = atoi(string);
+                if (app == UNITY || app == HAPTIC_SERIAL_INTERFACE) _app = (SerialConnectionApp)app;
             }
+            break;
+
+        case 'T':
+        case 't':
+            // Arms the host timeout with the given milliseconds, 0 disarms it.
+            if (strlen(string) > 0) {
+                long timeout = atol(string);
+                if (timeout >= 0) _hostTimeout = timeout;
+            }
+            break;
+
+        case 'A':
+        case 'a':
+            // Heartbeat. Receiving any message resets the host timeout, so there is nothing else to do.
             break;
 
         case 'S':
@@ -170,10 +207,11 @@ void SerialHandler::parseString(char *string) {
             if (strlen(string) > 0) {
                 char gainType = string[0];
                 char motorIndex = string[1];
-                char *token = strtok(string, seperator);  // Remove the gain type and motor index
-                token = strtok(NULL, seperator);          // Token now contains the gain value
-                double gain = atof(token);
+                strtok(string, seperator);  // Remove the gain type and motor index
+                double gain;
+                if (!nextNumber(NULL, seperator, gain)) break;
                 if (gain < 0) break;  // Do not accept negative values
+                noInterrupts();       // The control loop interrupt uses the gains
                 if (gainType == 'P' || gainType == 'p') {
                     if (motorIndex == '0') {
                         device->finger->setKp(gain);
@@ -199,6 +237,7 @@ void SerialHandler::parseString(char *string) {
                         // this->p("Palm Kd: ").pln(gain);
                     }
                 }
+                interrupts();
             }
             this->printGains();
             break;
@@ -210,13 +249,13 @@ void SerialHandler::parseString(char *string) {
 
                 char generatorIndex = string[1];
 
-                char *token = strtok(string, seperator);  // Remove the generator index
+                strtok(string, seperator);  // Remove the value type and the generator index
 
-                token = strtok(NULL, seperator);  // Token now contains the value
-
-                double value = atof(token);
+                double value;
+                if (!nextNumber(NULL, seperator, value)) break;
 
                 if (valueType == 'T' || valueType == 't') {
+                    if (value < WaveformGenerator::CONSTANT || value > WaveformGenerator::TRAPEZOIDAL) break;
                     if (generatorIndex == '0') {
                         device->waveformGeneratorFinger.setType((WaveformGenerator::WaveType((int)value)));
                         // this->p("Finger waveform type: ").pln(value);
@@ -262,12 +301,14 @@ void SerialHandler::parseString(char *string) {
         case 'o':
             if (strlen(string) > 0) {
                 char motorIndex = string[0];
-                char modeString = string[1];
-                int mode = atoi(&modeString);
+                int mode = string[1] - '0';
+                if (mode < MotorWithEncoder::POSITION_CONTROL || mode > MotorWithEncoder::FORCE_CONTROL) break;
+                noInterrupts();  // The control loop interrupt uses the controller mode
                 if (motorIndex == '0')
                     device->finger->setControllerMode(MotorWithEncoder::ControllerMode(mode));
                 else if (motorIndex == '1')
                     device->palm->setControllerMode(MotorWithEncoder::ControllerMode(mode));
+                interrupts();
                 // this->p("Palm Controller mode: ").pln(device->palm->getControllerMode());
                 // this->p("Finger Controller mode: ").pln(device->finger->getControllerMode());
             }
@@ -278,12 +319,15 @@ void SerialHandler::parseString(char *string) {
         case 'P':
         case 'p':
             if (strlen(string) > 0) {
-                char *token = strtok(string, seperator);
-                device->obj.nominalWidth = atof(token);
-                token = strtok(NULL, seperator);
-                device->obj.stiffness = atof(token);
-                token = strtok(NULL, seperator);
-                device->obj.damping = atof(token);
+                double width, stiffness, damping;
+                if (!nextNumber(string, seperator, width) || !nextNumber(NULL, seperator, stiffness) ||
+                    !nextNumber(NULL, seperator, damping))
+                    break;
+                noInterrupts();  // Change the object at once, the control loop interrupt uses it
+                device->obj.nominalWidth = width;
+                device->obj.stiffness = stiffness;
+                device->obj.damping = damping;
+                interrupts();
             }
             break;
 
@@ -294,10 +338,8 @@ void SerialHandler::parseString(char *string) {
                 char motorIndex = string[1];
                 // remove the first two characters from the string
                 memmove(string, string + 2, strlen(string) - 1);
-                char *token = strtok(string, seperator);
-                float lower = atof(token);
-                token = strtok(NULL, seperator);
-                float upper = atof(token);
+                double lower, upper;
+                if (!nextNumber(string, seperator, lower) || !nextNumber(NULL, seperator, upper)) break;
                 if (motorIndex == '0') {
                     if (limitType == 'S' || limitType == 's')
                         device->finger->setSoftPosLimit(lower, upper);
@@ -553,6 +595,16 @@ void SerialHandler::_printPeriodically(float freq, bool debug = false) {
         }
     }
     this->pln();
+}
+
+// Stops the device if the host armed the timeout (see the "T" message) and has not sent any message since.
+void SerialHandler::_checkHostTimeout() {
+    if (_hostTimeout == 0 || device->hostTimedOut) return;
+    if (millis() - _lastMessageTime <= _hostTimeout) return;
+    device->stopForHostTimeout();
+    this->p(_startMarker).p("X").p(_hostTimeout).pln(_endMarker);
+    // The host that armed the timeout is gone, so the next host should not be stopped unless it arms it too
+    _hostTimeout = 0;
 }
 
 void SerialHandler::setPrintFrequency(float freq) { _printFrequency = freq; }
