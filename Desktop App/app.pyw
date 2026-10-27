@@ -12,8 +12,8 @@ from PyQt5 import QtGui
 from UI import PyQt5_stylesheets as p5s
 
 logPath = None
-if sys.executable.endswith("pythonw.exe"):
-    # pythonw has no console, so errors are written to a file
+if sys.executable.endswith("pythonw.exe") or sys.stderr is None:
+    # pythonw and the app built with PyInstaller have no console, so errors are written to a file
     logPath = os.path.join(tempfile.gettempdir(), "stderr-" + os.path.basename(sys.argv[0]))
     sys.stdout = open(os.devnull, "w")
     sys.stderr = open(logPath, "w")

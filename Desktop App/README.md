@@ -3,21 +3,31 @@ This is a desktop application for controlling the haptic device. It is written i
 <!-- SS Image -->
 ![Desktop App Screenshot](../Images/interface.jpg)
 
-## Installing
+## Running the .exe
+
+`HapticDeviceInterface.exe` runs on Windows without Python. Download it from the artifacts of the latest [Tests run](https://github.com/bataseven/Haptic-Device/actions/workflows/tests.yml). Unexpected errors are shown in a dialog and written to `stderr-HapticDeviceInterface.exe` in the temporary folder (`%TEMP%`).
+
+## Running from the source
 
 The app is used on Windows with Python 3.11. In this folder:
 
 ```
 pip install -r requirements.txt
-```
-
-## Running
-
-```
 python app.pyw
 ```
 
-You can also double-click `app.pyw` to run it without a console window. Unexpected errors are then shown in a dialog and written to `stderr-app.pyw` in the temporary folder (`%TEMP%`).
+You can also double-click `app.pyw` to run it without a console window. Unexpected errors are then shown in a dialog and written to `stderr-app.pyw` in the temporary folder.
+
+## Building the .exe
+
+```
+pip install -r requirements-build.txt
+pyinstaller HapticDeviceInterface.spec
+```
+
+The .exe is written to `dist/`. Build it in a virtual environment that only has these requirements: PyInstaller bundles every optional package it finds, so a build from a Python with many packages can be several hundred MB instead of about 50 MB.
+
+## Using the app
 
 1. Connect the device over USB and flash the firmware first if needed (see [the firmware README](../Microcontroller/README.md)).
 2. Select the port of the device and click **Connect**. The device sends its gains, limits and controller modes, and the app shows them.

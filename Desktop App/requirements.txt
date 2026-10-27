@@ -1,6 +1,7 @@
 PyQt5==5.15.10
 PyQt5_sip>=12.13
 pyqtgraph==0.13.7
+numpy==2.4.4
 # Only needed for UI/serial_animator.py
 matplotlib==3.10.0
 matplotx==0.3.10

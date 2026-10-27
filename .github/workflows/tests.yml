@@ -1,0 +1,58 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  firmware:
+    name: Firmware tests and build
+    # The native tests need gcc, which Ubuntu has
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Microcontroller
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: platformio-${{ runner.os }}-${{ hashFiles('Microcontroller/platformio.ini') }}
+      - name: Install PlatformIO
+        run: pip install platformio==6.2.0
+      - name: Unit tests
+        run: pio test -e native
+      - name: Build the Teensy firmware
+        run: pio run -e teensy40
+
+  desktop-app:
+    name: Desktop app tests and .exe
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: Desktop App
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            Desktop App/requirements.txt
+            Desktop App/requirements-build.txt
+      - name: Install the requirements
+        run: pip install -r requirements-build.txt
+      - name: Unit tests
+        run: python -m unittest discover tests -v
+        env:
+          QT_QPA_PLATFORM: offscreen
+      - name: Build the .exe
+        run: pyinstaller HapticDeviceInterface.spec --noconfirm
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HapticDeviceInterface
+          path: Desktop App/dist/HapticDeviceInterface.exe
