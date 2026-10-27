@@ -28,7 +28,7 @@ class WaveformGenerator {
   int getFourierTerms();
 
  private:
-  unsigned long _lastMicros = 0;
+  uint32_t _lastMicros = 0;  // 32 bits like micros() on the Teensy, so the subtraction also overflows correctly
   bool _started = false;
   double _phase = 0;  // Position in the current period in radians [0, 2*PI)
   WaveType _type = WaveType::SQUARE;

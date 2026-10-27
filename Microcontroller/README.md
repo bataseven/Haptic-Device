@@ -41,6 +41,14 @@ Options at the top of `src/main.cpp`:
 
 The control loops run at 1 kHz in a timer interrupt. Reading the sensors, the serial port and the buttons happens in `loop()`.
 
+## Unit tests
+
+The tests in `test/` check the waveform generator, the PID controller and the force sensor calibration on the computer, without the device. `test/native_stubs` replaces the Arduino core and the Encoder library. They need gcc, so run them on Linux, macOS or in WSL on Windows:
+
+```
+pio test -e native
+```
+
 ## Pins
 
 | Pin | Connected to |

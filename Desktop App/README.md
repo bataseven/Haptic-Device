@@ -47,8 +47,16 @@ Each row of a recording is one status update from the device (40 per second). Th
 - the forces of the 4 sensors (N)
 - **Device Time:** when the device read the values, in seconds since the device started. Use this column for the time between samples, because "Time" also includes the USB transfer and processing delays.
 
-Recordings made before October 2026 have the "Wave Amplitude" and "Wave Frequency" labels swapped in the header, and some have other header problems. To fix the header of old recordings (a `.bak` copy of each changed file is kept):
+Recordings made with versions of the app from before October 2026 have the "Wave Amplitude" and "Wave Frequency" labels swapped in the header, and some have other header problems. To fix the header of old recordings (a `.bak` copy of each changed file is kept):
 
 ```
 python tools/fix_recording_headers.py <folder with the recordings>
+```
+
+## Tests
+
+The tests in `tests/` check the message parsing, the data recorder, the serial connection and the header fix tool without a device. In this folder:
+
+```
+python -m unittest discover tests
 ```

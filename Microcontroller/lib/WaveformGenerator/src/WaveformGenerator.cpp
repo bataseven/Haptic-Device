@@ -33,9 +33,10 @@ WaveformGenerator::WaveformGenerator(WaveType type, float frequency,  // Constru
 float WaveformGenerator::generate() {
     // Advance the phase by the time elapsed since the last call. The waves are calculated from the phase instead of
     // the time since boot, so that the output does not jump when the frequency changes.
-    unsigned long now = micros();
+    uint32_t now = micros();
     if (_started) {
-        double dt = (now - _lastMicros) / 1000000.0;  // Unsigned subtraction also works when micros() overflows
+        uint32_t elapsed = now - _lastMicros;  // Unsigned subtraction also works when micros() overflows
+        double dt = elapsed / 1000000.0;
         _phase = fmod(_phase + 2 * PI * _frequency * dt, 2 * PI);
         if (_phase < 0) _phase += 2 * PI;  // Negative frequency
         if (!isfinite(_phase)) _phase = 0;
