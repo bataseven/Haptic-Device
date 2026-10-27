@@ -39,7 +39,13 @@ While it is connected, the app sends a heartbeat to the device every 250 ms. If 
 
 ## Recorded data
 
-Each row of a recording is one status update from the device (40 per second). The columns are the data point number, the time (seconds since 1970, when the app received the update), then for the finger and the palm: position and velocity (encoder counts), controller mode, the 9 PID gains, and the waveform type, frequency, amplitude, offset and current value. The last 4 columns are the forces of the sensors (N).
+Each row of a recording is one status update from the device (40 per second). The columns are:
+
+- the data point number
+- **Time:** when the app received the update, in seconds since 1970
+- for the finger, then the palm: position and velocity (encoder counts), controller mode, the 9 PID gains, and the waveform type, frequency, amplitude, offset and current value
+- the forces of the 4 sensors (N)
+- **Device Time:** when the device read the values, in seconds since the device started. Use this column for the time between samples, because "Time" also includes the USB transfer and processing delays.
 
 Recordings made before October 2026 have the "Wave Amplitude" and "Wave Frequency" labels swapped in the header, and some have other header problems. To fix the header of old recordings (a `.bak` copy of each changed file is kept):
 

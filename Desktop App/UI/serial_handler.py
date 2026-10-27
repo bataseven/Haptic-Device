@@ -589,6 +589,12 @@ class SerialHandler(QWidget):
                 else:
                     self.setMotorStatusText()
                     self.setGainPlaceholders()
+            elif msgType == 'R':
+                try:
+                    self.hapticDevice.setDeviceTime(int(msg))
+                except ValueError as e:
+                    self.infoMessagesEdit.append(
+                        "Error Parsing: Device Time, " + str(e))
             elif msgType == 'U':
                 # Encoder count to mm factors of the finger and the palm. The firmware is the source of these values.
                 try:

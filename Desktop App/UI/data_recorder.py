@@ -33,7 +33,9 @@ def motorColumns(motor: str) -> list:
         [f"{motor} {name}" for _, name in WAVE_COLUMNS]
 
 
-HEADER = ["Data Point", "Time"] + motorColumns("Finger") + motorColumns("Palm") + FORCE_COLUMNS
+# "Time" is when the app received the values, "Device Time" is when the device read them (seconds since it started).
+# "Device Time" is the last column so that the other columns keep their positions from older recordings.
+HEADER = ["Data Point", "Time"] + motorColumns("Finger") + motorColumns("Palm") + FORCE_COLUMNS + ["Device Time"]
 SEPARATOR = ", "
 
 
@@ -156,8 +158,7 @@ class DataRecorder(QWidget):
         if not self.isRecording:
             return
 
-        # Note that the current time may not accurately represent the time at which the data was received.
-        # Because this function is called after couple of signals were emited from different QObjects.
+        # The current time includes the transfer and processing delays. Use the "Device Time" column for exact intervals.
         currentTime = time.time()
         device = self.hapticDevice
         values = [self.dataPoints, f"{currentTime:.3f}"]
@@ -166,6 +167,7 @@ class DataRecorder(QWidget):
         values += [device.palmPos, device.palmVel, device.palmControlMode, *device.palmGains]
         values += [device.waveformParams[1][key] for key, _ in WAVE_COLUMNS]
         values += device.forceValues
+        values.append(f"{device.deviceTime:.6f}")
 
         with open(self.fullPath, "a") as file:
             file.write(SEPARATOR.join(str(value) for value in values) + "\n")

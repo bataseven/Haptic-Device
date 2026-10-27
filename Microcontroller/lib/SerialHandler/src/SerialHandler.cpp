@@ -51,6 +51,9 @@ Heartbeat: "A". Does nothing, but like any message it resets the host timeout.
 + # + <Kd2> + # + <Kp3> + # + <Ki3> + # + <Kd3>
 
 
+Device time: "R" + <micros()> => "R123456789". First message of each status line sent to the haptic serial interface.
+The time when the values of the line were read, in microseconds. It overflows every 71.6 minutes.
+
 Haptic device status: "H" + <Motor Index> + <Encoder Pos>
 + SERIAL_SEPERATOR_CH + <Encoder Speed> => "H1123#123" (123 pos 123 speed)
 
@@ -528,6 +531,7 @@ void SerialHandler::_printPeriodically(float freq, bool debug = false) {
         this->p("PW=").p(PW).p(_separator);
     } else {
         noInterrupts();  // Interrupts are disabled while accessing the device data
+        unsigned long snapshotTime = micros();  // Sent along, so the receiver doesn't depend on transfer delays
         int32_t posFinger = device->finger->getPos();
         int32_t velFinger = device->finger->getVel();
         int32_t posPalm = device->palm->getPos();
@@ -545,6 +549,8 @@ void SerialHandler::_printPeriodically(float freq, bool debug = false) {
         // Send different information depending on whats on the other end of the serial connection
         switch (_app) {
             case HAPTIC_SERIAL_INTERFACE: {
+                this->p(_startMarker).p("R").p(snapshotTime).p(_endMarker);
+
                 this->p(_startMarker)
                     .p("H0")
                     .p(posFinger < 0 ? "-" : "")

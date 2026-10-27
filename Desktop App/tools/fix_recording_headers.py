@@ -36,6 +36,9 @@ def addMissingGainColumns(header: str, firstRow: str) -> str:
 
 def fixText(text: str) -> str:
     firstLine, _, rest = text.partition("\n")
+    if "Device Time" in firstLine:
+        return text  # Recorded after these problems were fixed
+
     end = firstLine.find(LAST_HEADER_FIELD)
     if end == -1:
         return text  # Not a recording made by the data recorder

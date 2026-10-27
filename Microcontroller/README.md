@@ -113,6 +113,7 @@ Every message starts with `<` and ends with `>`. The first character is the mess
 
 | Type | Format | Example | Content |
 |---|---|---|---|
+| `R` | `R` microseconds | `R123456789` | Device time when the values of the line were read. It overflows every 71.6 minutes. Only to the desktop app. |
 | `H` | `H` motor position `#` velocity | `H01A#-3` | Encoder position (counts) and velocity (counts/s) in hexadecimal |
 | `N` | `N` force | `N1.25` | Net finger force (N) |
 | `F` | `F` thumb outer `#` thumb inner `#` index inner `#` index outer | `F0.50#0.00#0.00#0.10` | Forces of the sensors (N). Only to the desktop app. |

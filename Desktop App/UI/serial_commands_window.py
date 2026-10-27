@@ -37,6 +37,7 @@ class SerialCommandsWindow(QWidget):
         text2 = "<html><head/><body>\
         <p><span style=\" font-size:9pt; font-weight:normal;\"> \
         <p><span style=\" font-size:9pt; font-weight:bold;\">While receiving messages from the haptic device:</span></p>\
+        <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>Device time when the status values were read (µs)</u><br><b>Message Type:</b> R + Microseconds <br><b>Example:</b> <em>R123456789</em></span></p>\
         <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>Haptic Device Status</u><br><b>Message Type:</b> H + MotorIndex + EncoderPos + EncoderSpeed <br><b>Example:</b> <em>H10#0</em></span></p>\
         <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>Sensor Force Values</u><br><b>Message Type:</b> F + Force1 + # + Force2 + # + Force3 + # + Force4 <br><b>Example:</b> <em>F0.5#0.5#0.5#0.5</em> </span></p>\
         <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>Net Finger Force</u><br><b>Message Type:</b> N + NetFingerForce<br><b>Example:</b> <em>N3.2</em> </span></p>\
