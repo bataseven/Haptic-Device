@@ -64,6 +64,10 @@ class SerialWorkerThreadTest(unittest.TestCase):
         self.assertFalse(self.handler.refreshPortsTimer.isActive())
         self.assertFalse(self.handler.connectSerialButton.isEnabled())
         self.assertFalse(self.handler.portsCombo.isEnabled())
+        self.assertFalse(self.handler.refreshPortsButton.isEnabled())
+        self.handler.refreshSerialPorts()  # e.g. the refresh button was clicked before it was disabled
+        self.assertFalse(self.handler.connectSerialButton.isEnabled())
+        self.assertFalse(self.handler.portsCombo.isEnabled())
 
         loop = QEventLoop()
         self.handler.serialWorker.connectionStatusChanged.connect(lambda status: loop.quit())

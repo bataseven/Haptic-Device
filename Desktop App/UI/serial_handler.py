@@ -158,6 +158,8 @@ class SerialHandler(QWidget):
 
         self.portName = ""
         self.requestedBaudrate = 0
+        self.isConnecting = False  # True while the worker opens a port
+        self.refreshButtonWasEnabled = True
 
         self.recordingIconTimer = QTimer(self)
         self.recordingIconTimer.timeout.connect(self.blinkRecLabel)
@@ -355,8 +357,10 @@ class SerialHandler(QWidget):
         hasPorts = len(ports) > 0
         if not hasPorts:
             self.portsCombo.addItem("No ports detected")
-        self.portsCombo.setEnabled(hasPorts)
-        self.connectSerialButton.setEnabled(hasPorts)
+        # While a port is being opened, they stay disabled until the worker reports the result
+        if not self.isConnecting:
+            self.portsCombo.setEnabled(hasPorts)
+            self.connectSerialButton.setEnabled(hasPorts)
 
     @pyqtSlot(str)
     def sendMessage(self, text: str) -> None:
@@ -393,11 +397,13 @@ class SerialHandler(QWidget):
 
         # The worker opens the port in its thread and reports the result with connectionStatusChanged. Opening can
         # take seconds, e.g. a Bluetooth port whose device is not reachable.
-        # Stop refreshing the ports meanwhile, because refreshSerialPorts() enables the button and the port list.
+        self.isConnecting = True
         self.refreshPortsTimer.stop()
         self.connectSerialButton.setText("Connecting...")
         self.connectSerialButton.setEnabled(False)
         self.portsCombo.setEnabled(False)
+        self.refreshButtonWasEnabled = self.refreshPortsButton.isEnabled()
+        self.refreshPortsButton.setEnabled(False)
         self.portName = port
         self.requestedBaudrate = baudrate
         self.connectRequested.emit(port, baudrate)
@@ -431,6 +437,7 @@ class SerialHandler(QWidget):
             self.refreshPortsTimer.start(self.refreshPortsInterval)
 
         elif status == ConnectionStatus.Connected:  # When the serial is opened
+            self.isConnecting = False
             self.refreshPortsTimer.stop()
             self.connectSerialButton.setText("Disconnect")
             self.connectSerialButton.setEnabled(True)
@@ -446,7 +453,9 @@ class SerialHandler(QWidget):
                 button.setEnabled(True)
 
         elif status == ConnectionStatus.DeviceNotFound:  # When the port could not be opened
+            self.isConnecting = False
             self.connectSerialButton.setText("Connect")
+            self.refreshPortsButton.setEnabled(self.refreshButtonWasEnabled)
             self.refreshSerialPorts()  # Enables the button and the port list again
             self.refreshPortsTimer.start(self.refreshPortsInterval)
             self.infoMessagesEdit.append(
