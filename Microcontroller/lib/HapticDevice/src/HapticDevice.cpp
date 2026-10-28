@@ -281,6 +281,9 @@ void HapticDevice::fingerControlLoop() {
                 finger->getPos() >= (FINGER_UPPER_SOFT_LIMIT - (obj.nominalWidth + proximityThreshold)) &&
                 obj.stiffness >= RIGID_BODY_STIFFNESS_THRESHOLD && netFingerForce < 0) {
                 finger->brake();
+                // A hold that starts after the brake must not use the errors of the previous hold. holdingRigidBody
+                // stays true, so the force controller is still reset when the finger leaves the object.
+                finger->resetHold();
             } else if (finger->getPos() >= (FINGER_UPPER_SOFT_LIMIT - obj.nominalWidth) &&
                        obj.stiffness >= RIGID_BODY_STIFFNESS_THRESHOLD && netFingerForce < 0) {
                 // If trying to push a stiff object, hold the finger at the object. holdPosition() has its own

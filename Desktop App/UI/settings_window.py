@@ -70,7 +70,6 @@ class SettingsWindow(QWidget):
         # The firmware only understands these characters, so they are shown but cannot be changed
         for edit in (self.startChEdit, self.endChEdit, self.seperatorChEdit):
             edit.setReadOnly(True)
-            edit.setToolTip("Set by the firmware")
 
         self.countToMmEdit.setValidator(QDoubleValidator())
         self.countToMmEdit2.setValidator(QDoubleValidator())
@@ -86,17 +85,17 @@ class SettingsWindow(QWidget):
         self.setLimitTexts()
 
         self.startChLabel.setToolTip(
-            "This is the character that will be used to start a message.")
+            "This is the character that will be used to start a message. It is set by the firmware.")
         self.startChEdit.setToolTip(
-            "This is the character that will be used to start a message.")
+            "This is the character that will be used to start a message. It is set by the firmware.")
         self.endChLabel.setToolTip(
-            "This is the character that will be used to end a message.")
+            "This is the character that will be used to end a message. It is set by the firmware.")
         self.endChEdit.setToolTip(
-            "This is the character that will be used to end a message.")
+            "This is the character that will be used to end a message. It is set by the firmware.")
         self.seperatorChLabel.setToolTip(
-            "This is the character that will be used to seperate the data in a message.")
+            "This is the character that will be used to seperate the data in a message. It is set by the firmware.")
         self.seperatorChEdit.setToolTip(
-            "This is the character that will be used to seperate the data in a message.")
+            "This is the character that will be used to seperate the data in a message. It is set by the firmware.")
 
         self.countToMmLabel.setToolTip(
             "This is the conversion factor from encoder count to mm for the finger motor.")
