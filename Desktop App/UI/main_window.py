@@ -97,7 +97,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         # Disconnect properly, so the device disarms its host timeout and keeps working with the next program
-        self.controlPage.serialHandler.serialWorker.disconnectSerial()
+        self.controlPage.serialHandler.shutdown()
         for window in QApplication.topLevelWidgets():
             window.close()
 

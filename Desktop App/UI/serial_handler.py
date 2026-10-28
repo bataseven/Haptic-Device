@@ -3,7 +3,7 @@ import time
 import re
 from PyQt5.QtSerialPort import QSerialPortInfo
 from PyQt5.QtWidgets import QApplication, QPushButton,QLabel, QLineEdit, QComboBox, QRadioButton, QTextEdit, QCheckBox, QWidget, QMessageBox, QFrame, QGridLayout
-from PyQt5.QtCore import pyqtSlot,  QTimer, Qt, pyqtSignal
+from PyQt5.QtCore import pyqtSlot,  QTimer, Qt, pyqtSignal, QThread, QMetaObject
 from PyQt5.QtGui import QDoubleValidator, QIntValidator, QTextCursor, QPixmap
 from PyQt5.uic import loadUi  # type: ignore
 
@@ -27,6 +27,14 @@ class SerialHandler(QWidget):
     serialConnected = pyqtSignal(bool)
     messageToSend = pyqtSignal(str)
     dataToPlot = pyqtSignal(str, float)
+    rxRate = pyqtSignal(float)
+    # Requests to the serial worker, which runs in its own thread
+    connectRequested = pyqtSignal(str, int)
+    writeRequested = pyqtSignal(str, bool)
+    disconnectRequested = pyqtSignal()
+
+    # The tests set this to False, so the worker runs in the GUI thread and they do not have to wait for it
+    useWorkerThread = True
 
     def __init__(self, hapticDevice: HapticDevice, parent=None) -> None:
         super().__init__(parent=parent)
@@ -125,35 +133,38 @@ class SerialHandler(QWidget):
         self.palmPosPrev = 0
         self.timePrev = time.time()
 
-        self.serialWorker: SerialWorker = SerialWorker(self)
         self.animator = None
 
-        self.serialWorker.connectionStatusChanged.connect(
-            lambda status: self.handleConnectionChanges(status))
+        # The worker opens, reads and writes the port in its own thread, so a port that takes seconds to open does not
+        # freeze the window. The signals between the two threads are connected to methods decorated with pyqtSlot,
+        # so they run in the thread of their object.
+        self.serialWorker = SerialWorker()
+        self.workerThread = QThread(self)
+        if self.useWorkerThread:
+            self.serialWorker.moveToThread(self.workerThread)
+            self.workerThread.start()
+            QApplication.instance().aboutToQuit.connect(self.shutdown)
 
-        self.serialWorker.receivedMessage.connect(
-            lambda message: self.processReceivedMessage(message))
+        self.serialWorker.connectionStatusChanged.connect(self.handleConnectionChanges)
+        self.serialWorker.receivedMessage.connect(self.processReceivedMessage)
+        self.serialWorker.sentMessage.connect(self.processSentMessage)
+        self.serialWorker.inRate.connect(self.setInRate)
+        self.serialWorker.infoMessages.connect(self.appendInfoMessage)
 
-        self.serialWorker.sentMessage.connect(
-            lambda message: self.processSentMessage(message))
-
-        self.serialWorker.inRate.connect(lambda rate: self.serialMessagesLabel.setText(
-            f"SERIAL MESSAGES (RX: {int(rate)} Hz)"))
-
-        self.serialWorker.infoMessages.connect(
-            lambda msg: self.infoMessagesEdit.append(msg))
-
-        self.messageToSend.connect(
-            lambda msg: self.serialWorker.writeSerial(msg))
+        self.connectRequested.connect(self.serialWorker.connectSerial)
+        self.writeRequested.connect(self.serialWorker.writeSerial)
+        self.disconnectRequested.connect(self.serialWorker.disconnectSerial)
+        self.messageToSend.connect(self.sendMessage)
 
         self.portName = ""
+        self.requestedBaudrate = 0
 
         self.recordingIconTimer = QTimer(self)
         self.recordingIconTimer.timeout.connect(self.blinkRecLabel)
 
         # Tells the device that this app is still running. The device stops the motors if the messages stop.
         self.heartbeatTimer = QTimer(self)
-        self.heartbeatTimer.timeout.connect(lambda: self.serialWorker.writeSerial("A", log=False))
+        self.heartbeatTimer.timeout.connect(lambda: self.writeRequested.emit("A", False))
 
         # Put all serial related buttons in a list to enable/disable them
         self.serialButtons = [self.refreshPortsButton, self.animatorButton, self.stopFingerButton, self.stopPalmButton, self.positionControlButton, self.velocityControlButton, self.debugButton,
@@ -347,29 +358,48 @@ class SerialHandler(QWidget):
         self.portsCombo.setEnabled(hasPorts)
         self.connectSerialButton.setEnabled(hasPorts)
 
+    @pyqtSlot(str)
+    def sendMessage(self, text: str) -> None:
+        self.writeRequested.emit(text, True)
+
+    @pyqtSlot(float)
+    def setInRate(self, rate: float) -> None:
+        self.serialMessagesLabel.setText(f"SERIAL MESSAGES (RX: {int(rate)} Hz)")
+        self.rxRate.emit(rate)
+
+    @pyqtSlot(str)
+    def appendInfoMessage(self, message: str) -> None:
+        self.infoMessagesEdit.append(message)
+
+    @pyqtSlot()
+    def shutdown(self) -> None:
+        """Closes the port and stops the worker thread. Called when the app closes."""
+        if not self.workerThread.isRunning():
+            self.serialWorker.disconnectSerial()
+            return
+        # Wait until the worker has sent the last messages and closed the port
+        QMetaObject.invokeMethod(self.serialWorker, "disconnectSerial", Qt.BlockingQueuedConnection)
+        self.workerThread.quit()
+        self.workerThread.wait()
+
     def connectOrDisconnect(self) -> None:
         if self.isSerialConnected:
-            self.serialWorker.disconnectSerial()
+            self.disconnectRequested.emit()
             return
         port = self.portsCombo.currentData()
         if not port:
             return
         baudrate = int(self.baudrateEdit.text()) if self.baudrateEdit.text().isdigit() else 115200
 
-        # Opening a port can take seconds, e.g. a Bluetooth port whose device is not reachable. Show that the app is
-        # busy before it waits.
+        # The worker opens the port in its thread and reports the result with connectionStatusChanged. Opening can
+        # take seconds, e.g. a Bluetooth port whose device is not reachable.
         self.connectSerialButton.setText("Connecting...")
         self.connectSerialButton.setEnabled(False)
-        QApplication.setOverrideCursor(Qt.WaitCursor)
-        QApplication.processEvents()
-        try:
-            self.serialWorker.connectSerial(port=port, baudrate=baudrate)
-        finally:
-            QApplication.restoreOverrideCursor()
-            if not self.isSerialConnected:
-                self.connectSerialButton.setText("Connect")
-                self.connectSerialButton.setEnabled(True)
+        self.portName = port
+        self.requestedBaudrate = baudrate
+        self.connectRequested.emit(port, baudrate)
 
+    @pyqtSlot(object)
     def handleConnectionChanges(self, status: ConnectionStatus) -> None:
         if status == ConnectionStatus.Disconnected:  # When the serial is closed
             self.heartbeatTimer.stop()
@@ -400,10 +430,10 @@ class SerialHandler(QWidget):
         elif status == ConnectionStatus.Connected:  # When the serial is opened
             self.refreshPortsTimer.stop()
             self.connectSerialButton.setText("Disconnect")
-            self.portName = self.serialWorker.serial.portName()
-            self.baudrateEdit.setText(str(self.serialWorker.serial.baudRate()))
+            self.connectSerialButton.setEnabled(True)
+            self.baudrateEdit.setText(str(self.requestedBaudrate))
             st.PORT = self.portName
-            st.BAUDRATE = str(self.serialWorker.serial.baudRate())
+            st.BAUDRATE = str(self.requestedBaudrate)
             self.serialConnected.emit(True)
             self.isSerialConnected = True
             self.heartbeatTimer.start(st.HEARTBEAT_INTERVAL_MS)
@@ -412,9 +442,11 @@ class SerialHandler(QWidget):
                 button.setEnabled(True)
 
         elif status == ConnectionStatus.DeviceNotFound:  # When the port could not be opened
+            self.connectSerialButton.setText("Connect")
+            self.connectSerialButton.setEnabled(True)
             self.infoMessagesEdit.append(
                 f"<span style=\" font-size:8pt; font-weight:400; color:red;\" >Could not open "
-                f"{self.portsCombo.currentText()}. Select the port of the haptic device: it is listed as Teensy "
+                f"{self.portName}. Select the port of the haptic device: it is listed as Teensy "
                 f"when it is connected over USB.</span>")
 
         elif status == ConnectionStatus.ConnectionLost:
@@ -438,7 +470,7 @@ class SerialHandler(QWidget):
 
             self.refreshPortsTimer.start(self.refreshPortsInterval)
 
-    @ pyqtSlot()
+    @pyqtSlot(str)
     def processReceivedMessage(self, msg: str) -> None:
         matches = findMessages(msg)
         if self.rxCheckBox.isChecked() and len(matches) > 0:
@@ -473,6 +505,7 @@ class SerialHandler(QWidget):
 
         self.parseMessage(msg, matches)
 
+    @pyqtSlot(str)
     def processSentMessage(self, text: str) -> None:
         """
         Write a string to the serial port. Start and End characters are added automatically.
@@ -946,7 +979,7 @@ class SerialHandler(QWidget):
         # Connected to the methods of the animator, so the connections are removed when it is closed and deleted
         self.dataToPlot.connect(self.animator.updateData)
         self.newData.connect(self.animator.updateDataCount)
-        self.serialWorker.inRate.connect(self.animator.setInRate)
+        self.rxRate.connect(self.animator.setInRate)
         self.animator.destroyed.connect(self.onAnimatorDestroyed)
 
     def onAnimatorDestroyed(self):

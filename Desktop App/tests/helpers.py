@@ -12,6 +12,10 @@ from PyQt5.QtWidgets import QApplication  # noqa: E402
 
 app = QApplication.instance() or QApplication([])
 
+# Run the serial worker in the GUI thread, so the tests do not have to wait for it
+from UI.serial_handler import SerialHandler  # noqa: E402
+SerialHandler.useWorkerThread = False
+
 
 class FakeSerialPort:
     """Stands in for QSerialPort: records what is written and returns the given lines when read."""

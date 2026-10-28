@@ -1,8 +1,39 @@
-from PyQt5.QtSerialPort import QSerialPort
+from PyQt5.QtSerialPort import QSerialPort, QSerialPortInfo
 from PyQt5.QtCore import pyqtSlot, pyqtSignal, QObject
+import sys
 import time
 from enum import Enum
 from .settings import serialSettings as st
+
+if sys.platform == "win32":
+    import ctypes
+    from ctypes import wintypes
+
+    _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    _kernel32.CreateFileW.restype = wintypes.HANDLE
+    _kernel32.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, wintypes.LPVOID,
+                                      wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+    _kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    _INVALID_HANDLE = wintypes.HANDLE(-1).value
+
+
+def tryOpeningPort(port: str) -> str:
+    """
+    Opens and closes the port the way QSerialPort opens it on Windows. Returns "" if it opened, otherwise the error.
+
+    QSerialPort.open() keeps Python's GIL while it waits, so a port that takes seconds to open, e.g. a Bluetooth port
+    whose device is not reachable, freezes every thread of the app. ctypes releases the GIL during the call, so only
+    the calling thread waits. On other systems this returns "" and QSerialPort reports the errors.
+    """
+    if sys.platform != "win32":
+        return ""
+    path = QSerialPortInfo(port).systemLocation() or "\\\\.\\" + port
+    GENERIC_READ_WRITE, OPEN_EXISTING, FILE_FLAG_OVERLAPPED = 0xC0000000, 3, 0x40000000
+    handle = _kernel32.CreateFileW(path, GENERIC_READ_WRITE, 0, None, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, None)
+    if handle == _INVALID_HANDLE:
+        return ctypes.FormatError(ctypes.get_last_error())
+    _kernel32.CloseHandle(handle)
+    return ""
 
 
 class ConnectionStatus(Enum):
@@ -14,8 +45,9 @@ class ConnectionStatus(Enum):
 
 class SerialWorker(QObject):
     """
-    Opens, reads and writes the serial port. It runs in the GUI thread: QSerialPort reads asynchronously, so it does
-    not block the GUI, and QSerialPort must only be used from one thread.
+    Opens, reads and writes the serial port. SerialHandler runs it in its own thread, because opening a port can block
+    for seconds, e.g. a Bluetooth port whose device is not reachable. QSerialPort must only be used from one thread,
+    so the other threads use it only through the slots of this class, by emitting signals connected to them.
     """
     connectionStatusChanged = pyqtSignal(object)
     receivedMessage = pyqtSignal(str)
@@ -25,27 +57,35 @@ class SerialWorker(QObject):
 
     def __init__(self, parent: QObject = None):
         super().__init__(parent)
-        self.serial: QSerialPort = QSerialPort()
+        # The port is a child of the worker, so it moves to the worker's thread with it
+        self.serial: QSerialPort = QSerialPort(self)
         self.serialInRate = 0
         self.lastSerialInTime = time.time()
 
-    def connectSerial(self, port: str, baudrate: int) -> bool:
+    @pyqtSlot(str, int)
+    def connectSerial(self, port: str, baudrate: int) -> None:
         if self.serial.isOpen():
             self.disconnectSerial()
             return
 
-        try:
-            self.serial = QSerialPort(port)
-            self.serial.setBaudRate(baudrate)
-        except Exception as e:
-            self.infoMessages.emit("Error: " + str(e))
+        # Find out first whether the port opens, without blocking the other threads. See tryOpeningPort().
+        error = tryOpeningPort(port)
+        if error:
+            self.infoMessages.emit(
+                f'<span style=\"font-size:8pt; font-weight:400; color:red;\" >Serial Connection: {error}</span>')
+            self.connectionStatusChanged.emit(ConnectionStatus.DeviceNotFound)
+            return
+
+        self.serial.deleteLater()
+        self.serial = QSerialPort(port, self)
+        self.serial.setBaudRate(baudrate)
         self.serial.setDataBits(QSerialPort.Data8)
         self.serial.setParity(QSerialPort.NoParity)
         self.serial.setStopBits(QSerialPort.OneStop)
         self.serial.setFlowControl(QSerialPort.NoFlowControl)
 
         self.serial.readyRead.connect(self.readSerial)
-        self.serial.errorOccurred.connect(lambda err: self.errorSerial(err))
+        self.serial.errorOccurred.connect(self.errorSerial)
         connected = self.serial.open(QSerialPort.ReadWrite)
         if not connected:
             self.connectionStatusChanged.emit(ConnectionStatus.DeviceNotFound)
@@ -59,6 +99,7 @@ class SerialWorker(QObject):
         # Ask the device to stop the motors if this app stops sending messages, e.g. when it crashes.
         self.writeSerial(f"T{st.HOST_TIMEOUT_MS}")
 
+    @pyqtSlot()
     def disconnectSerial(self) -> None:
         if not self.serial.isOpen():
             return
@@ -84,6 +125,7 @@ class SerialWorker(QObject):
             msg = msgInBytes.data().decode(errors="replace")
             self.receivedMessage.emit(msg)
 
+    @pyqtSlot(str, bool)
     def writeSerial(self, text: str, log: bool = True) -> None:
         if not self.serial.isOpen():
             self.infoMessages.emit("Error Sending: Not Connected")
@@ -103,5 +145,4 @@ class SerialWorker(QObject):
         if error == QSerialPort.ResourceError:
             self.serial.close()
             self.connectionStatusChanged.emit(ConnectionStatus.ConnectionLost)
-            self.serial = QSerialPort()
             self.serialInRate = 0
