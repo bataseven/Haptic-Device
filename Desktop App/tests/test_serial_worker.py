@@ -1,6 +1,7 @@
 import unittest
 
-from PyQt5.QtCore import QEventLoop, QTimer
+from PyQt5.QtCore import QCoreApplication, QEventLoop, QTimer
+from PyQt5.QtSerialPort import QSerialPortInfo
 
 from helpers import FakeSerialPort
 from UI.devices import HapticDevice
@@ -53,20 +54,28 @@ class SerialWorkerThreadTest(unittest.TestCase):
         self.assertIs(self.handler.serialWorker.thread(), self.handler.workerThread)
         self.assertIs(self.handler.serialWorker.serial.thread(), self.handler.workerThread)
 
-    def test_failed_open_is_reported_and_the_button_is_enabled_again(self):
+    def test_button_is_disabled_while_connecting_and_enabled_after_a_failed_open(self):
         statuses = []
         self.handler.serialWorker.connectionStatusChanged.connect(statuses.append)
         self.handler.portsCombo.addItem("COM_DOES_NOT_EXIST", "COM_DOES_NOT_EXIST")
         self.handler.portsCombo.setCurrentIndex(self.handler.portsCombo.count() - 1)
         self.handler.connectOrDisconnect()
+        # Refreshing the ports would enable the button while connecting
+        self.assertFalse(self.handler.refreshPortsTimer.isActive())
+        self.assertFalse(self.handler.connectSerialButton.isEnabled())
+        self.assertFalse(self.handler.portsCombo.isEnabled())
 
         loop = QEventLoop()
         self.handler.serialWorker.connectionStatusChanged.connect(lambda status: loop.quit())
         QTimer.singleShot(5000, loop.quit)
         loop.exec_()
+        QCoreApplication.processEvents()  # Let the handler handle the status, which is queued to its thread
         self.assertEqual(statuses, [ConnectionStatus.DeviceNotFound])
         self.assertEqual(self.handler.connectSerialButton.text(), "Connect")
-        self.assertTrue(self.handler.connectSerialButton.isEnabled())
+        # The button is enabled again if there is a port to connect to
+        hasPorts = len(QSerialPortInfo.availablePorts()) > 0
+        self.assertEqual(self.handler.connectSerialButton.isEnabled(), hasPorts)
+        self.assertTrue(self.handler.refreshPortsTimer.isActive())
 
     def test_shutdown_stops_the_thread(self):
         self.handler.shutdown()

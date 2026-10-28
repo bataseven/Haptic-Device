@@ -393,8 +393,11 @@ class SerialHandler(QWidget):
 
         # The worker opens the port in its thread and reports the result with connectionStatusChanged. Opening can
         # take seconds, e.g. a Bluetooth port whose device is not reachable.
+        # Stop refreshing the ports meanwhile, because refreshSerialPorts() enables the button and the port list.
+        self.refreshPortsTimer.stop()
         self.connectSerialButton.setText("Connecting...")
         self.connectSerialButton.setEnabled(False)
+        self.portsCombo.setEnabled(False)
         self.portName = port
         self.requestedBaudrate = baudrate
         self.connectRequested.emit(port, baudrate)
@@ -431,6 +434,7 @@ class SerialHandler(QWidget):
             self.refreshPortsTimer.stop()
             self.connectSerialButton.setText("Disconnect")
             self.connectSerialButton.setEnabled(True)
+            self.portsCombo.setEnabled(True)
             self.baudrateEdit.setText(str(self.requestedBaudrate))
             st.PORT = self.portName
             st.BAUDRATE = str(self.requestedBaudrate)
@@ -443,7 +447,8 @@ class SerialHandler(QWidget):
 
         elif status == ConnectionStatus.DeviceNotFound:  # When the port could not be opened
             self.connectSerialButton.setText("Connect")
-            self.connectSerialButton.setEnabled(True)
+            self.refreshSerialPorts()  # Enables the button and the port list again
+            self.refreshPortsTimer.start(self.refreshPortsInterval)
             self.infoMessagesEdit.append(
                 f"<span style=\" font-size:8pt; font-weight:400; color:red;\" >Could not open "
                 f"{self.portName}. Select the port of the haptic device: it is listed as Teensy "
