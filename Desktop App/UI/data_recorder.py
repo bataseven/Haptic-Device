@@ -101,8 +101,8 @@ class DataRecorder(QWidget):
             self.fullPath = os.path.join(self.savePathEdit.text(), self.fileName)
             with open(self.fullPath, "w") as file:
                 file.write(SEPARATOR.join(HEADER) + "\n")
-        except Exception as e:
-            print(e)
+        except OSError as e:
+            QMessageBox.warning(self, "Data Recorder", f"Could not create the recording file:\n{e}")
             return
 
         self.dataPoints = 0
@@ -169,8 +169,13 @@ class DataRecorder(QWidget):
         values += device.forceValues
         values.append(f"{device.deviceTime:.6f}")
 
-        with open(self.fullPath, "a") as file:
-            file.write(SEPARATOR.join(str(value) for value in values) + "\n")
+        try:
+            with open(self.fullPath, "a") as file:
+                file.write(SEPARATOR.join(str(value) for value in values) + "\n")
+        except OSError as e:  # e.g. the drive was removed
+            self.stopRecording()
+            QMessageBox.warning(self, "Data Recorder", f"Recording stopped. Could not write to the file:\n{e}")
+            return
 
         self.dataPoints += 1
 

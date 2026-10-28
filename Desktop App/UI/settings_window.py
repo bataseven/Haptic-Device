@@ -67,12 +67,10 @@ class SettingsWindow(QWidget):
         self.countToMmEdit.setText(f"{st.COUNT_TO_MM:.10f}")
         self.countToMmEdit2.setText(f"{st.COUNT_TO_MM2:.10f}")
 
-        # Create the following regex expression: ^[ -~]{1}$ (This is a single character between space and ~)
-        expression = r"^[ -~]{1}$"
-        self.startChEdit.setValidator(QRegExpValidator(QRegExp(expression)))
-        self.endChEdit.setValidator(QRegExpValidator(QRegExp(expression)))
-        self.seperatorChEdit.setValidator(
-            QRegExpValidator(QRegExp(expression)))
+        # The firmware only understands these characters, so they are shown but cannot be changed
+        for edit in (self.startChEdit, self.endChEdit, self.seperatorChEdit):
+            edit.setReadOnly(True)
+            edit.setToolTip("Set by the firmware")
 
         self.countToMmEdit.setValidator(QDoubleValidator())
         self.countToMmEdit2.setValidator(QDoubleValidator())
@@ -165,9 +163,6 @@ class SettingsWindow(QWidget):
     @pyqtSlot(bool)
     def saveChanged(self, closeWindow: bool):
         if self.changeWasMade:
-            st.SERIAL_START_CH = self.startChEdit.text()
-            st.SERIAL_END_CH = self.endChEdit.text()
-            st.SERIAL_SEPERATOR_CH = self.seperatorChEdit.text()
             st.COUNT_TO_MM = float(self.countToMmEdit.text() or 0)
             st.COUNT_TO_MM2 = float(self.countToMmEdit2.text() or 0)
             self.applyButton.setEnabled(False)

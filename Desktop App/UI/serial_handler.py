@@ -3,7 +3,7 @@ import time
 import re
 from PyQt5.QtSerialPort import QSerialPortInfo
 from PyQt5.QtWidgets import QApplication, QPushButton,QLabel, QLineEdit, QComboBox, QRadioButton, QTextEdit, QCheckBox, QWidget, QMessageBox, QFrame, QGridLayout
-from PyQt5.QtCore import pyqtSlot,  QTimer, QEventLoop, Qt, pyqtSignal
+from PyQt5.QtCore import pyqtSlot,  QTimer, Qt, pyqtSignal
 from PyQt5.QtGui import QDoubleValidator, QIntValidator, QTextCursor, QPixmap
 from PyQt5.uic import loadUi  # type: ignore
 
@@ -13,6 +13,12 @@ from .serial_worker import SerialWorker, ConnectionStatus
 from .animator import QAnimator
 
 TEENSY_VENDOR_ID = 0x16C0  # USB vendor id of the Teensy boards (PJRC)
+
+
+def findMessages(text: str) -> list:
+    """Returns (message with the start and end characters, message without them) for each message in the text."""
+    expression = re.escape(st.SERIAL_START_CH) + '(.*?)' + re.escape(st.SERIAL_END_CH)
+    return re.findall('(' + expression + ')', text)
 
 
 class SerialHandler(QWidget):
@@ -142,7 +148,8 @@ class SerialHandler(QWidget):
 
         self.portName = ""
 
-        self.recordingIconTimer: QTimer = QTimer()
+        self.recordingIconTimer = QTimer(self)
+        self.recordingIconTimer.timeout.connect(self.blinkRecLabel)
 
         # Tells the device that this app is still running. The device stops the motors if the messages stop.
         self.heartbeatTimer = QTimer(self)
@@ -377,10 +384,7 @@ class SerialHandler(QWidget):
             self.serialConnected.emit(False)
             self.isSerialConnected = False
 
-            loop = QEventLoop()
-            QTimer.singleShot(250, loop.quit)  # Wait 250ms to disconnect
-            loop.exec_()
-
+            # The worker has already sent the last messages and closed the port
             self.connectSerialButton.setEnabled(True)
             self.connectSerialButton.setText("Connect")
             self.infoMessagesEdit.append("Serial Connection: Closed")
@@ -436,10 +440,7 @@ class SerialHandler(QWidget):
 
     @ pyqtSlot()
     def processReceivedMessage(self, msg: str) -> None:
-        expression = re.compile(
-            r'(' + st.SERIAL_START_CH + '(.*?)' + st.SERIAL_END_CH + ')')
-        matches = expression.findall(msg)
-        # TODO: Do not math the same message twice. (Here and in parse message)
+        matches = findMessages(msg)
         if self.rxCheckBox.isChecked() and len(matches) > 0:
             line = ""
             message = "<span style=\" font-size:8pt; font-weight:400; color:blue;\" >"
@@ -470,7 +471,7 @@ class SerialHandler(QWidget):
             if (self.autoScrollCheckBox.isChecked()):
                 self.messagesEdit.moveCursor(QTextCursor.End)
 
-        self.parseMessage(msg)
+        self.parseMessage(msg, matches)
 
     def processSentMessage(self, text: str) -> None:
         """
@@ -489,13 +490,11 @@ class SerialHandler(QWidget):
             if (self.autoScrollCheckBox.isChecked()):
                 self.messagesEdit.moveCursor(QTextCursor.End)
 
-    def parseMessage(self, line: str) -> None:
+    def parseMessage(self, line: str, matches: list = None) -> None:
+        """Parses the messages in the line. Pass the result of findMessages(line) if it was already found."""
         line = line.strip()
-
-        # Find the matching regex groups for the expression: (@"<(.*?)>") # expression = re.compile(r'(<(.*?)>)')
-        expression = re.compile(
-            r'(' + st.SERIAL_START_CH + '(.*?)' + st.SERIAL_END_CH + ')')
-        matches = expression.findall(line)
+        if matches is None:
+            matches = findMessages(line)
 
         # If there are no matches, return
         if len(matches) == 0:
@@ -790,14 +789,23 @@ class SerialHandler(QWidget):
             paramType == 'A' or paramType == 'O')
         if value == "":
             return
-        if self.waveRadio1.isChecked():
-            generatorIndex = "0"
-            self.hapticDevice.waveformParams[0][paramType] = value if not makeUnitConversion else int(
-                round(float(value) / st.COUNT_TO_MM))
-        else:
-            generatorIndex = "1"
-            self.hapticDevice.waveformParams[1][paramType] = value if not makeUnitConversion else int(
-                round(float(value) / st.COUNT_TO_MM2))
+        try:
+            number = float(value)
+        except ValueError:
+            self.infoMessagesEdit.append(f"Invalid number: {value}")
+            return
+        generatorIndex = "0" if self.waveRadio1.isChecked() else "1"
+        if makeUnitConversion:
+            countToMm = st.COUNT_TO_MM if generatorIndex == "0" else st.COUNT_TO_MM2
+            if countToMm == 0:
+                self.infoMessagesEdit.append(
+                    "<span style=\"font-size:8pt; font-weight:400; color:red;\" >"
+                    "The mm conversion factor is 0. Set it in the settings or uncheck the mm box.</span>")
+                return
+            number = round(number / countToMm)
+        elif number.is_integer():
+            number = int(number)  # So that "5000" is not sent and shown as "5000.0"
+        self.hapticDevice.waveformParams[int(generatorIndex)][paramType] = number
         self.setWaveStatusText()
         msg = f"W{paramType}{generatorIndex}{st.SERIAL_SEPERATOR_CH}{self.hapticDevice.waveformParams[int(generatorIndex)][paramType]}"
         # self.serialWorker.writeSerial(msg)
@@ -915,10 +923,8 @@ class SerialHandler(QWidget):
             self.rec2Label.setPixmap(self.rec2)
             self.showRec1 = False
 
-            # Set the timer to timeout constantly
-            self.recordingIconTimer = QTimer(self)
+            # Blink the recording icon every second
             self.recordingIconTimer.start(1000)
-            self.recordingIconTimer.timeout.connect(self.blinkRecLabel)
         else:
             # Stop the timer
             self.showRec1 = False

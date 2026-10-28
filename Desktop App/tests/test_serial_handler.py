@@ -2,7 +2,7 @@ import unittest
 
 import helpers  # noqa: F401  Creates the Qt application
 from UI.devices import HapticDevice
-from UI.serial_handler import SerialHandler
+from UI.serial_handler import SerialHandler, findMessages
 from UI.settings import serialSettings as st
 
 
@@ -68,6 +68,49 @@ class SerialHandlerParserTest(unittest.TestCase):
     def test_malformed_messages_do_not_raise(self):
         self.handler.parseMessage("<Hxyz><F1#a><M><Rabc><U1>")
         self.assertIn("Error Parsing", self.handler.infoMessagesEdit.toPlainText())
+
+    def test_find_messages(self):
+        self.assertEqual(findMessages("x<A1>y<B2#3>"), [("<A1>", "A1"), ("<B2#3>", "B2#3")])
+
+
+class SerialHandlerWaveParameterTest(unittest.TestCase):
+    """Sending the waveform parameters typed in the main window."""
+
+    def setUp(self):
+        self.device = HapticDevice()
+        self.handler = SerialHandler(self.device)
+        self.sent = []
+        self.handler.messageToSend.connect(self.sent.append)
+        self.handler.waveRadio1.setChecked(True)
+        self.handler.unitCheckBox.setChecked(False)
+        oldFactor = st.COUNT_TO_MM
+        self.addCleanup(setattr, st, "COUNT_TO_MM", oldFactor)
+
+    def send(self, value, paramType):
+        self.handler.ampEdit.setText(value)
+        self.handler.sendWaveParameter(self.handler.ampEdit, paramType)
+
+    def test_whole_numbers_are_sent_as_int(self):
+        self.send("5000", 'A')
+        self.assertEqual(self.device.waveformParams[0]['A'], 5000)
+        self.assertEqual(self.sent, ["WA0#5000"])
+
+    def test_decimals_are_kept(self):
+        self.send("0.5", 'F')
+        self.assertEqual(self.sent, ["WF0#0.5"])
+
+    def test_millimeters_are_converted_to_counts(self):
+        st.COUNT_TO_MM = 0.01
+        self.handler.unitCheckBox.setChecked(True)
+        self.send("2", 'A')
+        self.assertEqual(self.sent, ["WA0#200"])
+
+    def test_zero_conversion_factor_is_not_sent(self):
+        st.COUNT_TO_MM = 0
+        self.handler.unitCheckBox.setChecked(True)
+        self.send("2", 'A')
+        self.assertEqual(self.sent, [])
+        self.assertIn("conversion factor is 0", self.handler.infoMessagesEdit.toPlainText())
 
 
 if __name__ == "__main__":

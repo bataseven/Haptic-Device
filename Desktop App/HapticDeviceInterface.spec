@@ -9,8 +9,8 @@ a = Analysis(
         ('UI/*.ui', 'UI'),
         ('UI/images/*.png', 'UI/images'),
     ],
-    # matplotlib, matplotx and serial are only used by the standalone UI/serial_animator.py. The others are optional
-    # imports of pyqtgraph that the app doesn't need, and would make the .exe much larger if they are installed.
+    # The app does not use these, but some are optional imports of pyqtgraph. If they are installed, PyInstaller would
+    # bundle them and make the .exe much larger.
     excludes=['matplotlib', 'matplotx', 'serial', 'tkinter', 'scipy', 'pandas', 'IPython', 'jupyter',
               'PyQt6', 'PySide2', 'PySide6', 'OpenGL', 'cupy', 'numba', 'h5py'],
 )
