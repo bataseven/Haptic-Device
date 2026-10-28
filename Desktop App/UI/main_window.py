@@ -121,7 +121,7 @@ class MainWindow(QMainWindow):
         <a href=\"https://bataseven.github.io/index.html#projects\">handheld haptic device</a> through serial port. Select the port and the baudrate of the device to \
         establish connection with the device. The program sends commands in a predetermined format to control the device. \
         These commands are listed under &ldquo;Help&rdquo; menu.</span></p>\
-        <p><span style=\" font-size:9pt; font-weight:normal;\">Version Number: 1.0.0</span></p>\
+        <p><span style=\" font-size:9pt; font-weight:normal;\">Version Number: 2.0.0</span></p>\
         <p><span style=\" font-size:9pt; font-weight:normal;\">Author: <em>Berke Ataseven</em> (bataseven15@ku.edu.tr)</span></p>\
         <p><span style=\" font-size:9pt; font-weight:normal;\"><em>© Koc University, Robotics and Mechatronics Laboratory</em></span></p>\
         </body></html>"
