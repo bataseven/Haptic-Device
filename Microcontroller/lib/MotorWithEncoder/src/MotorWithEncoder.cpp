@@ -200,23 +200,9 @@ bool MotorWithEncoder::goTo(double commandedValue) {
         } break;
     }
 
-    switch (_driverMode) {
-        case DriverMode::PWM:
-            if (_isSteadyState && _controllerMode == FORCE_CONTROL) break;
-            if (_pulse > 5) {
-                analogWrite(_phasePin, abs(_pulse));
-                analogWrite(_enablePin, 0);
-            } else if (_pulse < -5) {
-                analogWrite(_phasePin, 0);
-                analogWrite(_enablePin, abs(_pulse));
-            } else {
-                this->release();
-            }
-            break;
-        case DriverMode::PHASE_ENABLE:  // TODO
-            this->release();
-            break;
-    }
+    // In force control the output is kept while the force is steady. The caller releases the motor.
+    bool keepOutput = _driverMode == DriverMode::PWM && _isSteadyState && _controllerMode == FORCE_CONTROL;
+    if (!keepOutput) _drive(_pulse);
 
     if (commandedValue == 0)                                  // Avoid division by zero
         _lastErrors[errorIndex] = -valueToCalculateErrorFor;  // Calculate percent error
@@ -224,13 +210,16 @@ bool MotorWithEncoder::goTo(double commandedValue) {
         _lastErrors[errorIndex] = (commandedValue - valueToCalculateErrorFor) / (commandedValue);
 
     errorIndex = (errorIndex + 1) % _errorWindowLength;
+    if (_errorCount < _errorWindowLength) _errorCount++;
 
     double sum = 0;
     for (int i = 0; i < _errorWindowLength; i++) sum += abs(_lastErrors[i]);
 
     averageError = sum / (double)_errorWindowLength;
 
-    if (averageError <= 0.02) {  // Steady state is reached if the error is less than 2 percent
+    // Steady state is reached if the error is less than 2 percent. The window has to be full first, otherwise the
+    // zeros left by resetController() make the error look smaller than it is.
+    if (_errorCount == _errorWindowLength && averageError <= 0.02) {
         _iTerm = 0;
         isSteady = true;
         _steadyStateError = averageError;
@@ -261,6 +250,45 @@ bool MotorWithEncoder::go() {
     return isSteady;
 }
 
+// Position control that keeps its own gains (setHoldGains) and PID state, so it can be used for a moment without
+// changing the controller mode and resetting the state of its controller.
+// HapticDevice uses it to stop the finger at a rigid virtual object while in force control.
+// Call resetHold() before starting a new hold.
+void MotorWithEncoder::holdPosition(int32_t position) {
+    if (_homing) return;
+
+    double holdError = position - _position;
+    _holdITerm += _KiHold * holdError;
+    double dTerm = _holdSkipDerivative ? 0 : _KdHold * (holdError - _holdErrorPrevious);
+    _holdSkipDerivative = false;
+    _holdErrorPrevious = holdError;
+
+    _pulse = _addDeadBandAndLimit(_KpHold * holdError + _holdITerm + dTerm);
+
+    if (!_canMove) return;
+    _drive(_pulse);
+}
+
+// Drives the motor with the given pulse. Releases it if the pulse is too small to move it.
+void MotorWithEncoder::_drive(double pulse) {
+    switch (_driverMode) {
+        case DriverMode::PWM:
+            if (pulse > 5) {
+                analogWrite(_phasePin, abs(pulse));
+                analogWrite(_enablePin, 0);
+            } else if (pulse < -5) {
+                analogWrite(_phasePin, 0);
+                analogWrite(_enablePin, abs(pulse));
+            } else {
+                this->release();
+            }
+            break;
+        case DriverMode::PHASE_ENABLE:  // TODO
+            this->release();
+            break;
+    }
+}
+
 // When the motor is moving, "brake()" and "release()"
 // effectively stops the motor from rotating.
 // However "brake()" does it immideatly, whereas, "release()" coasts.
@@ -273,7 +301,7 @@ void MotorWithEncoder::brake() {
         analogWrite(_phasePin, 0);
     }
     // When the motor is stopped. Set this term back to zero to reset the accumulated error.
-    _iTerm = 0;
+    this->resetIntegralTerm();
 }
 
 // When the motor is moving, "brake()" and "release()" effectively
@@ -287,7 +315,7 @@ void MotorWithEncoder::release() {
         this->brake();
 
     // When the motor is stopped. Set this term back to zero to reset the accumulated error.
-    _iTerm = 0;
+    this->resetIntegralTerm();
 }
 
 // Set a flag to home the motor
@@ -426,11 +454,27 @@ void MotorWithEncoder::setDriverMode(DriverMode mode) { _driverMode = mode; }
 
 // By default Position control mode is enabled.
 void MotorWithEncoder::setControllerMode(ControllerMode mode) {
-    _iTerm = 0;
     _controllerMode = mode;
-    _PIDErrorPrevious = 0;
-    memset(_lastErrors, 0, _errorWindowLength * sizeof(*_lastErrors));
+    this->resetController();
 };
+
+// Clears the state of the controller: the integral term, the previous error of the derivative term and the errors
+// used to detect the steady state.
+void MotorWithEncoder::resetController() {
+    _iTerm = 0;
+    _PIDErrorPrevious = 0;
+    _skipDerivative = true;  // The previous error is unknown, so the first derivative would be a spike
+    memset(_lastErrors, 0, _errorWindowLength * sizeof(*_lastErrors));
+    _errorCount = 0;
+    _isSteadyState = false;
+}
+
+// Clears the state of holdPosition().
+void MotorWithEncoder::resetHold() {
+    _holdITerm = 0;
+    _holdErrorPrevious = 0;
+    _holdSkipDerivative = true;
+}
 
 // Set a coefficient to convert the counts of encoder into linear displacement in mm
 void MotorWithEncoder::setCoefficient(double count_to_mm) { _count_to_mm = count_to_mm; }
@@ -505,8 +549,19 @@ void MotorWithEncoder::setKd(double Kd) {
 // HapticDevice uses this to lower the gain while the finger is in contact with a virtual object.
 void MotorWithEncoder::setForceKpScale(double scale) { _forceKpScale = scale; }
 
-// Sets the integral term of the PID controller to zero.
-void MotorWithEncoder::resetIntegralTerm() { _iTerm = 0; }
+// Sets the gains of holdPosition().
+void MotorWithEncoder::setHoldGains(double Kp, double Ki, double Kd) {
+    _KpHold = Kp;
+    _KiHold = Ki;
+    _KdHold = Kd;
+    _holdITerm = 0;
+}
+
+// Sets the integral terms of the PID controller and of holdPosition() to zero.
+void MotorWithEncoder::resetIntegralTerm() {
+    _iTerm = 0;
+    _holdITerm = 0;
+}
 
 // Returns the last updated position.
 int32_t MotorWithEncoder::getPos() { return _position; }
@@ -626,7 +681,7 @@ void MotorWithEncoder::removeSoftPosLimit() {
 // Sets the analog write resolution bits.
 void MotorWithEncoder::setResolutionBit(int resolutionBit) {
     analogWriteResolution(resolutionBit);
-    MotorWithEncoder::maxPulse = pow(2, resolutionBit);
+    MotorWithEncoder::maxPulse = (1 << resolutionBit) - 1;
     MotorWithEncoder::resolutionBit = resolutionBit;
 }
 
@@ -662,8 +717,9 @@ double MotorWithEncoder::_calculatePID(double desired) {
 
     double pTerm = Kp * err;
     _iTerm += Ki * err;
-    double dTerm = Kd * (err - _PIDErrorPrevious);  // Calculate derivative term
-    double pulse = pTerm + _iTerm + dTerm;          // Sum the terms
+    double dTerm = _skipDerivative ? 0 : Kd * (err - _PIDErrorPrevious);  // Calculate derivative term
+    _skipDerivative = false;
+    double pulse = pTerm + _iTerm + dTerm;  // Sum the terms
 
     // Anti windup if the integral term is too large. and the controller is in velocity mode.
     if (_controllerMode == ControllerMode::VELOCITY_CONTROL) {
@@ -671,13 +727,17 @@ double MotorWithEncoder::_calculatePID(double desired) {
         pulse = pTerm + _iTerm + dTerm;
     }
 
+    _PIDErrorPrevious = err;
+    return _addDeadBandAndLimit(pulse);
+}
+
+// Adds the dead band to the pulse and limits it to the valid range of the analogWrite function.
+double MotorWithEncoder::_addDeadBandAndLimit(double pulse) {
     float smallThreshold = 5;
     if (pulse > smallThreshold)
         pulse += _deadBand;
     else if (pulse < -smallThreshold)
         pulse -= _deadBand;
-
-    _PIDErrorPrevious = err;
 
     if (pulse > MotorWithEncoder::maxPulse)
         return MotorWithEncoder::maxPulse;

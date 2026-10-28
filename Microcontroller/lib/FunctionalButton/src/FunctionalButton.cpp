@@ -15,7 +15,7 @@ void FunctionalButton::update() {
     _buttonReadingPrev = this->read();
 }
 
-u_int8_t FunctionalButton::_update() {
+uint8_t FunctionalButton::_update() {
     _msec = millis();
     _buttonReading = digitalRead(_pin);
     if (_buttonReading && !_buttonReadingPrev) {
@@ -76,16 +76,16 @@ uint8_t FunctionalButton::getState() { return _state; }
 
 uint8_t FunctionalButton::read() { return digitalRead(_pin); }
 
-void FunctionalButton::setHoldTimeout(u_int32_t holdTimeout) { _holdTimeout = holdTimeout; }
+void FunctionalButton::setHoldTimeout(uint32_t holdTimeout) { _holdTimeout = holdTimeout; }
 
-void FunctionalButton::setCickTimeout(u_int32_t clickTimeout) { _clickTimeout = clickTimeout; }
+void FunctionalButton::setClickTimeout(uint32_t clickTimeout) { _clickTimeout = clickTimeout; }
 
-void FunctionalButton::setDebounceDuration(u_int32_t debDuration) { _debDuration = debDuration; }
+void FunctionalButton::setDebounceDuration(uint32_t debDuration) { _debDuration = debDuration; }
 
-u_int32_t FunctionalButton::getHoldTimeout() { return _holdTimeout; }
+uint32_t FunctionalButton::getHoldTimeout() { return _holdTimeout; }
 
-u_int32_t FunctionalButton::getClickTimeout() { return _clickTimeout; }
+uint32_t FunctionalButton::getClickTimeout() { return _clickTimeout; }
 
-u_int32_t FunctionalButton::getDebounceDuration() { return _debDuration; }
+uint32_t FunctionalButton::getDebounceDuration() { return _debDuration; }
 
-u_int8_t FunctionalButton::getPin() { return _pin; }
+uint8_t FunctionalButton::getPin() { return _pin; }

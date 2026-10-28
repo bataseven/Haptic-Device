@@ -10,30 +10,30 @@ class FunctionalButton {
     uint8_t getState();
     uint8_t read();
 
-    void setHoldTimeout(u_int32_t);
-    void setCickTimeout(u_int32_t);
-    void setDebounceDuration(u_int32_t);
+    void setHoldTimeout(uint32_t);
+    void setClickTimeout(uint32_t);
+    void setDebounceDuration(uint32_t);
 
-    u_int32_t getHoldTimeout();
-    u_int32_t getClickTimeout();
-    u_int32_t getDebounceDuration();
-    u_int8_t getPin();
+    uint32_t getHoldTimeout();
+    uint32_t getClickTimeout();
+    uint32_t getDebounceDuration();
+    uint8_t getPin();
 
    private:
     uint8_t _pin;
     uint8_t _state = None;
     byte _buttonReading;
     byte _buttonReadingPrev;
-    u_int32_t _clickTimeout = 300;
-    u_int32_t _holdTimeout = 1000;
-    u_int32_t _msec = millis();
-    u_int32_t _msecLst = 0;
-    u_int32_t _msecLst2 = 0;
+    uint32_t _clickTimeout = 300;
+    uint32_t _holdTimeout = 1000;
+    uint32_t _msec = millis();
+    uint32_t _msecLst = 0;
+    uint32_t _msecLst2 = 0;
     byte _doubleHold = false;
-    u_int32_t _debDuration = 40;
-    u_int32_t _debStartTime = 0;
-    u_int8_t _prevReturned = 0;
+    uint32_t _debDuration = 40;
+    uint32_t _debStartTime = 0;
+    uint8_t _prevReturned = 0;
 
-    u_int8_t _update();
+    uint8_t _update();
 };
 #endif

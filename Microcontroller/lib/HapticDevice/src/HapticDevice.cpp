@@ -42,6 +42,8 @@ void HapticDevice::initialize() {
     finger->setKi(5);
     finger->setKd(80);
 
+    finger->setHoldGains(RIGID_BODY_KP, RIGID_BODY_KI, RIGID_BODY_KD);
+
     finger->setResolutionBit(13);
     finger->setDeadBand(725);
     finger->setSoftPosLimit(FINGER_LOWER_SOFT_LIMIT, FINGER_UPPER_SOFT_LIMIT);
@@ -140,24 +142,17 @@ void HapticDevice::_LEDUpdate() {
         if (imuActive) {
             led.setPixelColor(0, CYAN);
             _currentColor = CYAN;
-        } else { // If the MPU6050 was deactivated, light up purple for 2000ms (Single hold of both buttons)
-            if (!imuActive) {
-                digitalWrite(13, HIGH);
-                led.setPixelColor(0, RED);
-                _currentColor = RED;
-            } else {
-                led.setPixelColor(0, PURPLE);
-                _currentColor = PURPLE;
-            }
+        } else { // If the MPU6050 was deactivated, light up red for 2000ms (Single hold of both buttons)
+            led.setPixelColor(0, RED);
+            _currentColor = RED;
         }
     } else if ((fingerButtonState == FunctionalButton::SingleHold && !palmButton->read()) ||
                (palmButtonState == FunctionalButton::SingleHold &&
                 !fingerButton->read())) { // If either button is single held, light up white
         led.setPixelColor(0, WHITE);
         _currentColor = WHITE;
-    } else {
-        digitalWrite(13, LOW);
     }
+    // Pin 13 (the built-in LED) is not set here. loop() blinks it to show that the program is running.
 
     if (_currentColor != _lastColor) {
         // Keep track of the last color and change the LED only when the color changes.
@@ -274,6 +269,7 @@ void HapticDevice::fingerControlLoop() {
 
     if (!(fingerButtonState == FunctionalButton::SingleHold || fingerButtonState == FunctionalButton::DoubleHold)) {
         if (finger->getControllerMode() != MotorWithEncoder::FORCE_CONTROL) {
+            holdingRigidBody = false;
             steadyState = finger->go(); // Calculate the internal controller output and actuate the motor
             if (steadyState)
                 finger->release();
@@ -287,12 +283,17 @@ void HapticDevice::fingerControlLoop() {
                 finger->brake();
             } else if (finger->getPos() >= (FINGER_UPPER_SOFT_LIMIT - obj.nominalWidth) &&
                        obj.stiffness >= RIGID_BODY_STIFFNESS_THRESHOLD && netFingerForce < 0) {
-                // If trying to push a stiff object, set to position control mode.
-                finger->setControllerMode(MotorWithEncoder::POSITION_CONTROL);
-                finger->setDesiredPosition((FINGER_UPPER_SOFT_LIMIT - obj.nominalWidth));
-                finger->go(); // Calculate the internal controller output and actuate the motor
-                finger->setControllerMode(MotorWithEncoder::FORCE_CONTROL);
+                // If trying to push a stiff object, hold the finger at the object. holdPosition() has its own
+                // controller, so the force controller keeps its state.
+                if (!holdingRigidBody)
+                    finger->resetHold();
+                finger->holdPosition(FINGER_UPPER_SOFT_LIMIT - obj.nominalWidth);
+                holdingRigidBody = true;
             } else {
+                // The force controller did not run during the hold, so its state is out of date
+                if (holdingRigidBody)
+                    finger->resetController();
+                holdingRigidBody = false;
                 steadyState = finger->go(); // Calculate the internal controller output and actuate the motor
                 if (steadyState)
                     finger->release();

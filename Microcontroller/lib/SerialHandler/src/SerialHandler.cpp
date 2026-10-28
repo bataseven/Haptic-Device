@@ -111,30 +111,31 @@ void SerialHandler::_receiveNonBlocking() {
     static byte ndx = 0;
     char rc;
 
-    if (_serial->available() <= 0) return;
-    
-    rc = _serial->read();
-    if (recvInProgress == true) {
-        if (rc != _endMarker) {
-            _receivedChars[ndx] = rc;
-            ndx++;
-            if (ndx >= _numChars) {
-                this->pln("Buffer Overflow");
-                ndx = _numChars - 1;
+    while (_serial->available() > 0) {
+        rc = _serial->read();
+        if (recvInProgress == true) {
+            if (rc != _endMarker) {
+                _receivedChars[ndx] = rc;
+                ndx++;
+                if (ndx >= _numChars) {
+                    // Drop the message instead of parsing the cut off part. Wait for the next start marker.
+                    this->pln("Buffer Overflow");
+                    recvInProgress = false;
+                    ndx = 0;
+                }
+            } else {
+                _receivedChars[ndx] = '\0';  // terminate the string when the end marker arrives
+                recvInProgress = false;
+                ndx = 0;
+                _lastMessageTime = millis();
+                if (device->hostTimedOut) device->resumeAfterHostTimeout();  // A host is sending messages again
+                this->parseString(_receivedChars);
             }
-        } else {
-            // digitalWrite(13, !digitalRead(13));
-            _receivedChars[ndx] = '\0';  // terminate the string when the end marker arrives
-            recvInProgress = false;
-            ndx = 0;
-            _lastMessageTime = millis();
-            if (device->hostTimedOut) device->resumeAfterHostTimeout();  // A host is sending messages again
-            this->parseString(_receivedChars);
         }
-    }
 
-    else if (rc == _startMarker) {
-        recvInProgress = true;
+        else if (rc == _startMarker) {
+            recvInProgress = true;
+        }
     }
 }
 
@@ -350,7 +351,7 @@ void SerialHandler::parseString(char *string) {
 
         case 'l':
         case 'L':
-            if (strlen(string) > 0) {
+            if (strlen(string) >= 2) {
                 char limitType = string[0];
                 char motorIndex = string[1];
                 // remove the first two characters from the string

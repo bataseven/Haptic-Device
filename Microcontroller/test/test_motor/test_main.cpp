@@ -36,9 +36,44 @@ void test_derivative_is_zero_for_a_constant_error_below_1(void) {
     motor.setDesiredForce(0.5);
     motor.setForce(0);
 
-    motor.go();  // The error changes from 0 to 0.5, so the derivative term is 100 * 0.5
+    motor.go();  // There is no previous error after a reset, so there is no derivative term
+    TEST_ASSERT_EQUAL_INT(0, phaseOutput());
+    motor.setForce(-0.5);
+    motor.go();  // The error changes from 0.5 to 1, so the derivative term is 100 * 0.5
     TEST_ASSERT_EQUAL_INT(50, phaseOutput());
-    motor.go();  // The error stays 0.5, so the derivative term is 0
+    motor.go();  // The error stays 1, so the derivative term is 0
+    TEST_ASSERT_EQUAL_INT(0, phaseOutput());
+}
+
+void test_steady_state_needs_a_full_error_window(void) {
+    MotorWithEncoder motor(PHASE_PIN, ENABLE_PIN, 3, 4);
+    setForceGains(motor, 0, 0, 0);
+    motor.setDesiredForce(1);
+    motor.setForce(0.9);  // 10 percent error
+
+    // The 20 errors of the window are 0 after a reset. They must not make the 10 percent error look like 0.5 percent.
+    for (int i = 0; i < 20; i++) TEST_ASSERT_FALSE(motor.go());
+
+    motor.setForce(0.99);  // 1 percent error
+    motor.resetController();
+    for (int i = 0; i < 19; i++) TEST_ASSERT_FALSE(motor.go());
+    TEST_ASSERT_TRUE(motor.go());
+}
+
+void test_holding_a_position_keeps_the_force_controller_state(void) {
+    MotorWithEncoder motor(PHASE_PIN, ENABLE_PIN, 3, 4);
+    setForceGains(motor, 0, 0, 100);
+    motor.setHoldGains(2, 0, 0);
+    motor.setDesiredForce(0.5);
+    motor.setForce(0);
+    motor.go();
+
+    motor.resetHold();
+    motor.holdPosition(100);  // The motor is at 0
+    TEST_ASSERT_EQUAL_INT(200, phaseOutput());
+    TEST_ASSERT_EQUAL_INT(MotorWithEncoder::FORCE_CONTROL, motor.getControllerMode());
+
+    motor.go();  // The force error is still 0.5, so the derivative term stays 0
     TEST_ASSERT_EQUAL_INT(0, phaseOutput());
 }
 
@@ -120,6 +155,8 @@ void test_acceleration_needs_5_positions(void) {
 int main(int argc, char **argv) {
     UNITY_BEGIN();
     RUN_TEST(test_derivative_is_zero_for_a_constant_error_below_1);
+    RUN_TEST(test_steady_state_needs_a_full_error_window);
+    RUN_TEST(test_holding_a_position_keeps_the_force_controller_state);
     RUN_TEST(test_integral_term_keeps_fractions);
     RUN_TEST(test_force_kp_scale_does_not_change_the_gain);
     RUN_TEST(test_reading_the_gains_of_a_mode_keeps_the_controller_mode);

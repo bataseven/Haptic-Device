@@ -26,6 +26,7 @@ class MotorWithEncoder {
     void update();
     bool goTo(double);
     bool go();
+    void holdPosition(int32_t);
     void brake();
     void release();
     void home();
@@ -49,9 +50,12 @@ class MotorWithEncoder {
     void setKi(double);
     void setKd(double);
     void setForceKpScale(double);
+    void setHoldGains(double, double, double);
 
     // Do not use this function unless you know what you are doing
     void resetIntegralTerm();
+    void resetController();
+    void resetHold();
 
     int32_t getPos();
     double getVel();
@@ -113,6 +117,7 @@ class MotorWithEncoder {
     int32_t _velocityPrevious = 0;
     int32_t _velocityErrorPrevious = 0;
     double _PIDErrorPrevious = 0;
+    bool _skipDerivative = true;  // True until the controller has an error from the previous call
 
     int32_t _acceleration = 0;  // Unit is encoder count per second squared
     int32_t _lowerHardPosLimit = 0;
@@ -124,6 +129,7 @@ class MotorWithEncoder {
     const int _errorWindowLength = 20;
     double* _lastErrors;
     int errorIndex = 0;
+    int _errorCount = 0;  // Number of errors in _lastErrors since the controller was reset
     long long _updateTimer = 0;
     long _steadyStateError = 0;
 
@@ -163,6 +169,13 @@ class MotorWithEncoder {
                            // motor is almost rotating.
 
     double _iTerm = 0;
+
+    // Gains and state of holdPosition(), which are separate from the position controller
+    double _KpHold = 0, _KiHold = 0, _KdHold = 0;
+    double _holdITerm = 0;
+    double _holdErrorPrevious = 0;
+    bool _holdSkipDerivative = true;
+
     bool _hasHardPosLimit = false;
     bool _hasSoftPosLimit = false;
     bool _hardLimitViolation = false;
@@ -175,5 +188,7 @@ class MotorWithEncoder {
     long long _calculatePositionPID(long);
     long long _calculateVelocityPID(long);
     double _calculatePID(double);
+    double _addDeadBandAndLimit(double);
+    void _drive(double);
 };
 #endif

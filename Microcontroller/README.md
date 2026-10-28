@@ -106,7 +106,7 @@ Every message starts with `<` and ends with `>`. The first character is the mess
 | `O` | `O` motor mode | `O02` | Sets the controller mode of a motor |
 | `K` | `K` P/I/D motor `#` gain | `KP1#0.5` | Sets a PID gain of the motor's current controller mode |
 | `W` | `W` T/F/A/O generator `#` value | `WF1#0.5` | Sets the type, frequency (Hz), amplitude or offset of a waveform. Types are 0: constant, 1: square, 2: sawtooth, 3: triangular, 4: sinusoidal, 5: trapezoidal. |
-| `P` | `P` width `#` stiffness `#` damping | `P50000#2.5#0.1` | Sets the virtual object. The width is in encoder counts. |
+| `P` | `P` width `#` stiffness `#` damping | `P50000#2.5#0.1` | Sets the virtual object. The width is in encoder counts. With a stiffness of at least `RIGID_BODY_STIFFNESS_THRESHOLD` the object is rigid: a separate position controller (`RIGID_BODY_KP/KI/KD` in `HapticDevice.h`) holds the finger at its surface. |
 | `L` | `L` S/H motor lower `#` upper | `LS01000#2000` | Sets the soft (`S`) or hard (`H`) position limits in encoder counts |
 | `S` | `S` motor 0/1 | `S01` | Stops (1) or releases (0) a motor |
 | `H` | `H` motor | `H1` | Homes a motor. Only motors with a limit switch (the palm) can be homed. |

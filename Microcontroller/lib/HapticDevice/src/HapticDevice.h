@@ -23,6 +23,12 @@
 #define RIGID_BODY_STIFFNESS_THRESHOLD \
     12                              // Virtual objects with stiffness more than this value are considered rigid bodies.
 #define FINGER_FORCE_KP 800         // Initial Kp of the finger force controller. Can be changed over serial.
+// Gains of the position controller that stops the finger at a rigid virtual object. Before this controller had its
+// own state, the derivative term used a previous error of 0, so it acted as an extra proportional gain. Kp = 1 + 6
+// (the finger position Kp + Kd) and Kd = 0 keep that stiffness.
+#define RIGID_BODY_KP 7
+#define RIGID_BODY_KI 0
+#define RIGID_BODY_KD 0
 #define FINGER_CONTACT_KP_SCALE \
     (1.0 / 3.0)  // The finger force controller Kp is multiplied by this while touching a virtual object.
 #define PALM_LOWER_SOFT_LIMIT 550   // 500
@@ -137,6 +143,7 @@ class HapticDevice {
     double desiredFingerVel = 0;
 
     bool steadyState = false;
+    bool holdingRigidBody = false;  // True while the finger is held at a rigid virtual object
 
     bool hostTimedOut = false;  // True while the motors are stopped because the host stopped sending messages
 
