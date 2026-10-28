@@ -38,26 +38,31 @@ class SerialCommandsWindow(QWidget):
         <p><span style=\" font-size:9pt; font-weight:normal;\"> \
         <p><span style=\" font-size:9pt; font-weight:bold;\">While receiving messages from the haptic device:</span></p>\
         <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>Device time when the status values were read (µs)</u><br><b>Message Type:</b> R + Microseconds <br><b>Example:</b> <em>R123456789</em></span></p>\
-        <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>Haptic Device Status</u><br><b>Message Type:</b> H + MotorIndex + EncoderPos + EncoderSpeed <br><b>Example:</b> <em>H10#0</em></span></p>\
+        <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>Haptic Device Status (Hexadecimal Counts)</u><br><b>Message Type:</b> H + MotorIndex + EncoderPos + # + EncoderSpeed <br><b>Example:</b> <em>H10#0</em></span></p>\
+        <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>Waveform Generator Output</u><br><b>Message Type:</b> W + GeneratorIndex + Value <br><b>Example:</b> <em>W05000.0</em></span></p>\
         <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>Sensor Force Values</u><br><b>Message Type:</b> F + Force1 + # + Force2 + # + Force3 + # + Force4 <br><b>Example:</b> <em>F0.5#0.5#0.5#0.5</em> </span></p>\
         <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>Net Finger Force</u><br><b>Message Type:</b> N + NetFingerForce<br><b>Example:</b> <em>N3.2</em> </span></p>\
         <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>Desired Finger Force</u><br><b>Message Type:</b> D + DesiredForce <br><b>Example:</b> <em>D4.5</em> </span></p>\
         <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>IMU Euler Angles</u><br><b>Message Type:</b> E + Yaw + # + Roll + # + Pitch <br><b>Example:</b> <em>E10.5#3.5#128.3</em> </span></p>\
         <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>PID Gains of Position Velocity and Force Controllers </u><br><b>Message Type:</b> K + MotorIndex + Kp1 + # + Ki1 + # + Kd1 + # + Kp2 + # + Ki2 + # + Kd2 + # + Kp3 + # + Ki3 + # + Kd3<br><b>Example:</b> <em>K01.00#0.00#6.00#0.05#0.01#0.00#1000.00#5.00#100.00</em></span></p>\
+        <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>Motor Soft and Hard Limits</u><br><b>Message Type:</b> L + S or H + MotorIndex + Lower + # + Upper<br><b>Example:</b> <em>LS00#160000</em></span></p>\
         <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>Controller mode of a motor (0: position, 1: velocity, 2: force)</u><br><b>Message Type:</b> M + MotorIndex + ControllerMode <br><b>Example:</b> <em>M02</em> </span></p>\
-        <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>Encoder count to mm factors of the finger and the palm</u><br><b>Message Type:</b> U + Finger + # + Palm <br><b>Example:</b> <em>U0.000296452618#0.005973945762</em> </span></p>\
+        <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>Encoder count to mm factors of the finger and the palm</u><br><b>Message Type:</b> U + Finger + # + Palm <br><b>Example:</b> <em>U0.0005310863#0.0059739458</em> </span></p>\
         <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>Motors stopped because no message was received for the host timeout</u><br><b>Message Type:</b> X + TimeoutInMs <br><b>Example:</b> <em>X1000</em> </span></p>\
         </body></html>"
 
         text3 = "<html><head/><body>\
         <p><span style=\" font-size:9pt; font-weight:normal;\"> \
         <p><span style=\" font-size:9pt; font-weight:bold;\">While sending messages to the haptic device:</span></p>\
-        <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>To specify which program is connected to the haptic device over the serial port</u><br><b>Message Type:</b> C + Program <br><b>Example:</b> <em>C0</em> </span></p>\
-        <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>To stop the motors</u><br><b>Message Type:</b> S + MotorIndex + Stop(0 or 1) <br><b>Example:</b> <em>S01</em></span></p>\
+        <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>To specify which program is connected to the haptic device over the serial port</u><br><b>Message Type:</b> C + Program <br><b>Example:</b> <em>C1</em> </span></p>\
+        <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>To stop or release a motor</u><br><b>Message Type:</b> S + MotorIndex + Stop(0 or 1) <br><b>Example:</b> <em>S01</em></span></p>\
+        <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>To home a motor to its limit switch</u><br><b>Message Type:</b> H + MotorIndex <br><b>Example:</b> <em>H0</em> or <em>H1</em></span></p>\
         <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>To change PID gains</u><br><b>Message Type:</b> K + P or I or D + MotorIndex + # + Gain <br><b>Example:</b> <em>KP1#0.5</em> </span></p>\
+        <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>To change motor soft or hard limits</u><br><b>Message Type:</b> L + S or H + MotorIndex + Lower + # + Upper <br><b>Example:</b> <em>LS00#160000</em> </span></p>\
         <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>To change the waveform parameters</u><br><b>Message Type:</b> W + T or F or A or O + GeneratorIndex + # + Value <br><b>Example:</b> <em>WF1#0.5</em> </span></p>\
         <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>To change the controller mode</u><br><b>Message Type:</b> O + MotorIndex + ControllerMode <br><b>Example:</b> <em>O10</em> </span></p>\
         <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>To set a virtual object</u><br><b>Message Type:</b> P + NominalWidth + # + Stiffness + # + Damping<br><b>Example:</b> <em>P50000#2.5#0.1</em> </span></p>\
+        <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>To set WSG50 gripper state</u><br><b>Message Type:</b> G + Width + # + Speed + # + Force<br><b>Example:</b> <em>G50#10#5</em> </span></p>\
         <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>To set serial debug mode</u><br><b>Message Type:</b> B + DebugMode <br><b>Example:</b> <em>B0</em> </span></p>\
         <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>To stop the motors if no message is received for a time (0 disarms)</u><br><b>Message Type:</b> T + TimeoutInMs <br><b>Example:</b> <em>T1000</em> </span></p>\
         <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>Heartbeat, sent periodically so the timeout does not fire</u><br><b>Message Type:</b> A <br><b>Example:</b> <em>A</em> </span></p>\

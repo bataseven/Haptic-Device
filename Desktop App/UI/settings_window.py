@@ -2,7 +2,7 @@ from os.path import dirname, abspath
 from enum import Enum
 from PyQt5.QtSerialPort import QSerialPort, QSerialPortInfo
 from PyQt5.QtWidgets import QPushButton, QLabel, QLineEdit, QComboBox, QRadioButton, QTextEdit, QCheckBox, QWidget, QDialog, QMessageBox
-from PyQt5.QtCore import pyqtSlot,  QTimer, QProcess, QEventLoop, Qt, pyqtSignal, QThread, QObject, QRegExp, QSettings
+from PyQt5.QtCore import pyqtSlot, QTimer, QProcess, QEventLoop, Qt, pyqtSignal, QThread, QObject, QRegExp, QSettings
 from PyQt5.QtGui import QDoubleValidator, QIntValidator, QTextCursor, QPixmap, QIcon, QRegExpValidator, QCloseEvent
 from PyQt5.uic import loadUi  # type: ignore
 
@@ -34,15 +34,19 @@ class SettingsWindow(QWidget):
         self.fingerSoftLowerEdit: QLineEdit
         self.fingerSoftUpperEdit: QLineEdit
         self.fingerSoftSendButton: QPushButton
+        self.fingerSoftMmLabel: QLabel
         self.fingerHardLowerEdit: QLineEdit
         self.fingerHardUpperEdit: QLineEdit
         self.fingerHardSendButton: QPushButton
+        self.fingerHardMmLabel: QLabel
         self.palmSoftLowerEdit: QLineEdit
         self.palmSoftUpperEdit: QLineEdit
         self.palmSoftSendButton: QPushButton
+        self.palmSoftMmLabel: QLabel
         self.palmHardLowerEdit: QLineEdit
         self.palmHardUpperEdit: QLineEdit
         self.palmHardSendButton: QPushButton
+        self.palmHardMmLabel: QLabel
 
         self.okButton: QPushButton
         self.cancelButton: QPushButton
@@ -51,7 +55,6 @@ class SettingsWindow(QWidget):
         self.infoTimer: QTimer = QTimer()
         self.changeWasMade = False
         self.setupUI()
-        
 
     def setupUI(self):
         self.setWindowTitle("Settings")
@@ -132,6 +135,42 @@ class SettingsWindow(QWidget):
         self.palmHardLowerEdit.returnPressed.connect(self.palmHardSendButton.animateClick)
         self.palmHardUpperEdit.returnPressed.connect(self.palmHardSendButton.animateClick)
 
+        for edit in (self.fingerSoftLowerEdit, self.fingerSoftUpperEdit,
+                     self.fingerHardLowerEdit, self.fingerHardUpperEdit,
+                     self.palmSoftLowerEdit, self.palmSoftUpperEdit,
+                     self.palmHardLowerEdit, self.palmHardUpperEdit,
+                     self.countToMmEdit, self.countToMmEdit2):
+            edit.textChanged.connect(self.updateLimitMmLabels)
+        self.updateLimitMmLabels()
+
+    @staticmethod
+    def _formatLimitMm(lowerText: str, upperText: str, factor: float) -> str:
+        try:
+            lower = float(lowerText) if lowerText != "" else 0.0
+            upper = float(upperText) if upperText != "" else 0.0
+        except ValueError:
+            return ""
+        return f"({lower * factor:.2f} to {upper * factor:.2f} mm)"
+
+    def updateLimitMmLabels(self):
+        try:
+            fingerFactor = float(self.countToMmEdit.text())
+        except ValueError:
+            fingerFactor = st.COUNT_TO_MM
+        try:
+            palmFactor = float(self.countToMmEdit2.text())
+        except ValueError:
+            palmFactor = st.COUNT_TO_MM2
+
+        self.fingerSoftMmLabel.setText(
+            self._formatLimitMm(self.fingerSoftLowerEdit.text(), self.fingerSoftUpperEdit.text(), fingerFactor))
+        self.fingerHardMmLabel.setText(
+            self._formatLimitMm(self.fingerHardLowerEdit.text(), self.fingerHardUpperEdit.text(), fingerFactor))
+        self.palmSoftMmLabel.setText(
+            self._formatLimitMm(self.palmSoftLowerEdit.text(), self.palmSoftUpperEdit.text(), palmFactor))
+        self.palmHardMmLabel.setText(
+            self._formatLimitMm(self.palmHardLowerEdit.text(), self.palmHardUpperEdit.text(), palmFactor))
+
     @pyqtSlot(bool)
     def onSerialConnected(self, connected: bool):
         self.portLabel.setText(st.PORT)
@@ -158,6 +197,7 @@ class SettingsWindow(QWidget):
             str(int(self.hapticDevice.palmHardLimits[0])))
         self.palmHardUpperEdit.setText(
             str(int(self.hapticDevice.palmHardLimits[1])))
+        self.updateLimitMmLabels()
 
     @pyqtSlot(bool)
     def saveChanged(self, closeWindow: bool):

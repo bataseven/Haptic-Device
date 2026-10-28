@@ -77,6 +77,30 @@ class DataRecorderTest(unittest.TestCase):
         self.assertFalse(self.recorder.isRecording)
         self.assertEqual(glob.glob(os.path.join(self.folder, "*.csv")), [])
 
+    def test_continuous_recording_starts_without_duration_timer(self):
+        self.recorder.saveDurationEdit.setText("")
+        self.recorder.continuousCheckBox.setChecked(True)
+        self.record(STATUS_LINE.format(time=1000000, finger=5, palm=6))
+        _, rows = self.readRows()
+        self.assertEqual(len(rows), 1)
+
+    def test_file_prefix_tag_is_included_in_filename(self):
+        self.recorder.filePrefixEdit.setText("Subject01_Trial2")
+        self.record(STATUS_LINE.format(time=0, finger=1, palm=2))
+        files = glob.glob(os.path.join(self.folder, "*.csv"))
+        self.assertEqual(len(files), 1)
+        self.assertIn("HapticDeviceData_Subject01_Trial2_TEST_", os.path.basename(files[0]))
+
+    def test_virtual_object_columns_are_recorded_when_checked(self):
+        self.device.pseudoObject = {'width': 45000, 'stiffness': 3.5, 'damping': 0.2}
+        self.recorder.virtualObjectCheckBox.setChecked(True)
+        self.record(STATUS_LINE.format(time=0, finger=1, palm=2))
+        header, rows = self.readRows()
+        row = dict(zip(header, rows[0]))
+        self.assertEqual(row["Virtual Object Width"], "45000")
+        self.assertEqual(row["Virtual Object Stiffness"], "3.5")
+        self.assertEqual(row["Virtual Object Damping"], "0.2")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,15 +1,10 @@
-
-from ast import Expression
 from os.path import dirname, abspath
-from math import pi as PI
 import time
 import re
 import os
-from PyQt5.QtSerialPort import QSerialPort, QSerialPortInfo
-from PyQt5.QtWidgets import QPushButton, QMessageBox, QLineEdit, QWidget, QFileDialog, QGroupBox, QProgressBar
-from PyQt5.QtCore import pyqtSlot,  QTimer, QProcess, QEventLoop, Qt, pyqtSignal
-from PyQt5.QtGui import QIcon
-from PyQt5.QtGui import QDoubleValidator, QIntValidator, QTextCursor
+from PyQt5.QtWidgets import QPushButton, QMessageBox, QLineEdit, QWidget, QFileDialog, QCheckBox, QProgressBar
+from PyQt5.QtCore import pyqtSlot, QTimer, Qt, pyqtSignal, QSettings
+from PyQt5.QtGui import QIcon, QDoubleValidator
 from PyQt5.uic import loadUi  # type: ignore
 
 if __name__ == "__main__":
@@ -25,6 +20,7 @@ GAIN_COLUMNS = ["PID Position P", "PID Position I", "PID Position D",
 WAVE_COLUMNS = [('T', "Wave Type"), ('F', "Wave Frequency"), ('A', "Wave Amplitude"),
                 ('O', "Wave Offset"), ('V', "Wave Value")]
 FORCE_COLUMNS = ["Thumb Outer Force", "Thumb Inner Force", "Index Inner Force", "Index Outer Force"]
+VIRTUAL_OBJECT_COLUMNS = ["Virtual Object Width", "Virtual Object Stiffness", "Virtual Object Damping"]
 
 
 def motorColumns(motor: str) -> list:
@@ -45,17 +41,18 @@ class DataRecorder(QWidget):
     def __init__(self, hapticDevice: HapticDevice, portName: str, parent=None) -> None:
         super().__init__(parent=parent)
         loadUi(dirname(abspath(__file__)) + "/data_recorder.ui", self)
-        self.fingerGroupBox: QGroupBox
-        self.palmGroupBox: QGroupBox
-        self.virtualObjectGroupBox: QGroupBox
         self.savePathEdit: QLineEdit
         self.browseButton: QPushButton
+        self.filePrefixEdit: QLineEdit
+        self.virtualObjectCheckBox: QCheckBox
         self.saveDurationEdit: QLineEdit
+        self.continuousCheckBox: QCheckBox
         self.progressBar: QProgressBar
         self.recordButton: QPushButton
         self.hapticDevice = hapticDevice
         self.portName: str = portName
         self.dataPoints = 0
+        self.recordVirtualObject = True
         self.setupUI()
 
         self.recordTimer = QTimer()
@@ -71,9 +68,11 @@ class DataRecorder(QWidget):
         self.setWindowTitle("Data Recorder")
         self.browseButton.clicked.connect(self.browse)
         self.recordButton.clicked.connect(self.record)
+        self.continuousCheckBox.stateChanged.connect(
+            lambda state: self.saveDurationEdit.setEnabled(state != Qt.Checked))
         self.savePathEdit.setText(os.getcwd())
         validator = QDoubleValidator(
-            self, bottom=0.0, top=100.0, notation=QDoubleValidator.StandardNotation)
+            self, bottom=0.0, top=86400.0, notation=QDoubleValidator.StandardNotation)
         self.saveDurationEdit.setValidator(validator)
         # Make the widget window size unchangeable
         self.setFixedSize(self.size())
@@ -87,33 +86,50 @@ class DataRecorder(QWidget):
     def startRecording(self):
         if self.isRecording:
             return
-        try:
-            duration = float(self.saveDurationEdit.text())
-        except ValueError:
-            duration = 0
-        if duration <= 0:
-            QMessageBox.warning(self, "Data Recorder", "Enter the recording duration in seconds.")
-            return
+        durationText = self.saveDurationEdit.text().strip()
+        isContinuous = self.continuousCheckBox.isChecked() or durationText == "0"
+        duration = 0.0
+        if not isContinuous:
+            try:
+                duration = float(durationText)
+            except ValueError:
+                duration = 0.0
+            if duration <= 0:
+                QMessageBox.warning(self, "Data Recorder", "Enter the recording duration in seconds.")
+                return
+
+        self.recordVirtualObject = self.virtualObjectCheckBox.isChecked()
+        header = HEADER + (VIRTUAL_OBJECT_COLUMNS if self.recordVirtualObject else [])
+        rawPrefix = self.filePrefixEdit.text().strip()
+        safePrefix = re.sub(r'[<>:"/\\|?*]', '_', rawPrefix)
+        prefixPart = f"{safePrefix}_" if safePrefix else ""
+
         try:
             # Include current date in the file name
-            self.fileName = "HapticDeviceData_" + self.portName + "_" +\
-                time.strftime("%Y-%m-%d_%H-%M-%S") + ".csv"
+            self.fileName = f"HapticDeviceData_{prefixPart}{self.portName}_{time.strftime('%Y-%m-%d_%H-%M-%S')}.csv"
             self.fullPath = os.path.join(self.savePathEdit.text(), self.fileName)
             with open(self.fullPath, "w") as file:
-                file.write(SEPARATOR.join(HEADER) + "\n")
+                file.write(SEPARATOR.join(header) + "\n")
         except OSError as e:
             QMessageBox.warning(self, "Data Recorder", f"Could not create the recording file:\n{e}")
             return
 
         self.dataPoints = 0
-        # Deactivate browse button
+        # Deactivate input widgets while recording
         self.browseButton.setEnabled(False)
         self.saveDurationEdit.setEnabled(False)
         self.savePathEdit.setEnabled(False)
+        self.filePrefixEdit.setEnabled(False)
+        self.virtualObjectCheckBox.setEnabled(False)
+        self.continuousCheckBox.setEnabled(False)
         self.recordButton.setText("Stop")
 
-        self.recordTimer.start(int(duration * 1000))
-        self.progressBarTimer.start(100)
+        if isContinuous:
+            self.progressBar.setRange(0, 0)
+        else:
+            self.progressBar.setRange(0, 100)
+            self.recordTimer.start(int(duration * 1000))
+            self.progressBarTimer.start(100)
 
         self.isRecording = True
         self.recordingInProgress.emit(self.isRecording)
@@ -123,16 +139,20 @@ class DataRecorder(QWidget):
             return
 
         self.browseButton.setEnabled(True)
-        self.saveDurationEdit.setEnabled(True)
+        self.saveDurationEdit.setEnabled(not self.continuousCheckBox.isChecked())
         self.savePathEdit.setEnabled(True)
+        self.filePrefixEdit.setEnabled(True)
+        self.virtualObjectCheckBox.setEnabled(True)
+        self.continuousCheckBox.setEnabled(True)
         self.recordButton.setText("Record")
 
         # Stop the timer if it is running
         if self.recordTimer.isActive():
             self.recordTimer.stop()
         if self.progressBarTimer.isActive():
-            self.progressBar.setValue(0)
             self.progressBarTimer.stop()
+        self.progressBar.setRange(0, 100)
+        self.progressBar.setValue(0)
 
         self.isRecording = False
         self.recordingInProgress.emit(self.isRecording)
@@ -168,6 +188,8 @@ class DataRecorder(QWidget):
         values += [device.waveformParams[1][key] for key, _ in WAVE_COLUMNS]
         values += device.forceValues
         values.append(f"{device.deviceTime:.6f}")
+        if self.recordVirtualObject:
+            values += [device.pseudoObject['width'], device.pseudoObject['stiffness'], device.pseudoObject['damping']]
 
         try:
             with open(self.fullPath, "a") as file:
@@ -190,6 +212,30 @@ class DataRecorder(QWidget):
         if path != "":
             self.savePathEdit.setText(path)
 
+    def loadSettings(self, settings: QSettings) -> None:
+        savePath = settings.value("recorder/savePath", None)
+        if savePath and os.path.isdir(str(savePath)):
+            self.savePathEdit.setText(str(savePath))
+        duration = settings.value("recorder/duration", None)
+        if duration is not None:
+            self.saveDurationEdit.setText(str(duration))
+        prefix = settings.value("recorder/filePrefix", None)
+        if prefix is not None:
+            self.filePrefixEdit.setText(str(prefix))
+        continuous = settings.value("recorder/continuous", None)
+        if continuous is not None:
+            self.continuousCheckBox.setChecked(str(continuous).lower() == "true")
+        virtualObject = settings.value("recorder/virtualObject", None)
+        if virtualObject is not None:
+            self.virtualObjectCheckBox.setChecked(str(virtualObject).lower() == "true")
+
+    def saveSettings(self, settings: QSettings) -> None:
+        settings.setValue("recorder/savePath", self.savePathEdit.text())
+        settings.setValue("recorder/duration", self.saveDurationEdit.text())
+        settings.setValue("recorder/filePrefix", self.filePrefixEdit.text())
+        settings.setValue("recorder/continuous", self.continuousCheckBox.isChecked())
+        settings.setValue("recorder/virtualObject", self.virtualObjectCheckBox.isChecked())
+
     def closeEvent(self, event):
         self.stopRecording()
         event.accept()
@@ -199,6 +245,6 @@ if __name__ == "__main__":
     import sys
     from PyQt5.QtWidgets import QApplication
     app = QApplication(sys.argv)
-    window = DataRecorder(None,"COM3")
+    window = DataRecorder(None, "COM3")
     window.show()
     sys.exit(app.exec_())

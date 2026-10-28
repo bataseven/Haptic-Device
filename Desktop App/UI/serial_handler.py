@@ -2,9 +2,9 @@ from os.path import dirname, abspath
 import time
 import re
 from PyQt5.QtSerialPort import QSerialPortInfo
-from PyQt5.QtWidgets import QApplication, QPushButton,QLabel, QLineEdit, QComboBox, QRadioButton, QTextEdit, QCheckBox, QWidget, QMessageBox, QFrame, QGridLayout
-from PyQt5.QtCore import pyqtSlot,  QTimer, Qt, pyqtSignal, QThread, QMetaObject
-from PyQt5.QtGui import QDoubleValidator, QIntValidator, QTextCursor, QPixmap
+from PyQt5.QtWidgets import QApplication, QPushButton, QLabel, QLineEdit, QComboBox, QRadioButton, QTextEdit, QCheckBox, QWidget, QMessageBox, QFrame, QGridLayout, QShortcut
+from PyQt5.QtCore import pyqtSlot, QTimer, Qt, pyqtSignal, QThread, QMetaObject, QSettings
+from PyQt5.QtGui import QDoubleValidator, QIntValidator, QTextCursor, QPixmap, QKeySequence
 from PyQt5.uic import loadUi  # type: ignore
 
 from .devices import HapticDevice
@@ -78,8 +78,11 @@ class SerialHandler(QWidget):
         self.forceLabel4: QLabel
         self.forceLabel5: QLabel
 
+        self.stopAllButton: QPushButton
         self.stopFingerButton: QPushButton
+        self.homeFingerButton: QPushButton
         self.stopPalmButton: QPushButton
+        self.homePalmButton: QPushButton
 
         self.positionControlButton: QPushButton
         self.velocityControlButton: QPushButton
@@ -102,7 +105,9 @@ class SerialHandler(QWidget):
         self.freqSendButton: QPushButton
         self.ampSendButton: QPushButton
         self.offsetSendButton: QPushButton
+        self.waveSendAllButton: QPushButton
 
+        self.widthLabel: QLabel
         self.widthEdit: QLineEdit
         self.stiffnessEdit: QLineEdit
         self.dampingEdit: QLineEdit
@@ -116,6 +121,7 @@ class SerialHandler(QWidget):
         self.KpSendButton: QPushButton
         self.KiSendButton: QPushButton
         self.KdSendButton: QPushButton
+        self.gainsSendAllButton: QPushButton
 
         self.messagesLayout : QGridLayout
         self.serialMessagesLabel: QLabel
@@ -169,8 +175,12 @@ class SerialHandler(QWidget):
         self.heartbeatTimer.timeout.connect(lambda: self.writeRequested.emit("A", False))
 
         # Put all serial related buttons in a list to enable/disable them
-        self.serialButtons = [self.refreshPortsButton, self.animatorButton, self.stopFingerButton, self.stopPalmButton, self.positionControlButton, self.velocityControlButton, self.debugButton,
-                              self.forceControlButton, self.waveSendButton, self.freqSendButton, self.ampSendButton, self.offsetSendButton, self.objectSendButton, self.KpSendButton, self.KiSendButton, self.KdSendButton]
+        self.serialButtons = [self.refreshPortsButton, self.animatorButton, self.stopAllButton, self.stopFingerButton,
+                              self.homeFingerButton, self.stopPalmButton, self.homePalmButton,
+                              self.positionControlButton, self.velocityControlButton, self.debugButton,
+                              self.forceControlButton, self.waveSendButton, self.freqSendButton, self.ampSendButton,
+                              self.offsetSendButton, self.waveSendAllButton, self.objectSendButton, self.KpSendButton,
+                              self.KiSendButton, self.KdSendButton, self.gainsSendAllButton]
 
         self.hapticDevice = hapticDevice
         self.refreshPortsButton.clicked.connect(self.refreshSerialPorts)
@@ -180,8 +190,13 @@ class SerialHandler(QWidget):
         self.baudrateEdit.returnPressed.connect(
             self.connectSerialButton.animateClick)
 
+        self.stopAllButton.clicked.connect(self.stopAll)
+        self.stopAllShortcut = QShortcut(QKeySequence(Qt.Key_Escape), self)
+        self.stopAllShortcut.activated.connect(self.onStopAllShortcut)
         self.stopFingerButton.clicked.connect(self.stopFinger)
+        self.homeFingerButton.clicked.connect(self.homeFinger)
         self.stopPalmButton.clicked.connect(self.stopPalm)
+        self.homePalmButton.clicked.connect(self.homePalm)
 
         self.debugButton.clicked.connect(self.setDebug)
 
@@ -196,6 +211,9 @@ class SerialHandler(QWidget):
             "Millimeters" if state == Qt.Checked else "Counts"))
         self.unitCheckBox.stateChanged.connect(lambda state: self.ampUnitLabel.setText(
             "Millimeters" if state == Qt.Checked else "Counts"))
+        self.unitCheckBox.stateChanged.connect(lambda state: self.widthLabel.setText(
+            "Width [mm]: " if state == Qt.Checked else "Width [cnt]: "))
+        self.unitCheckBox.stateChanged.connect(self.setObjectPlaceholders)
         self.waveSendButton.clicked.connect(self.sendWaveType)
         self.freqSendButton.clicked.connect(
             lambda: self.sendWaveParameter(self.freqEdit, 'F'))
@@ -203,6 +221,7 @@ class SerialHandler(QWidget):
             lambda: self.sendWaveParameter(self.ampEdit, 'A'))
         self.offsetSendButton.clicked.connect(
             lambda: self.sendWaveParameter(self.offsetEdit, 'O'))
+        self.waveSendAllButton.clicked.connect(self.sendAllWaveParameters)
 
         self.objectSendButton.clicked.connect(self.sendPsuedoObject)
 
@@ -212,6 +231,7 @@ class SerialHandler(QWidget):
             lambda: self.sendGain(self.KiEdit, "I"))
         self.KdSendButton.clicked.connect(
             lambda: self.sendGain(self.KdEdit, "D"))
+        self.gainsSendAllButton.clicked.connect(self.sendAllGains)
 
         self.gainsRadio1.clicked.connect(self.setGainPlaceholders)
         self.gainsRadio2.clicked.connect(self.setGainPlaceholders)
@@ -308,6 +328,7 @@ class SerialHandler(QWidget):
         self.KdEdit.setValidator(QDoubleValidator(
             self, notation=QDoubleValidator.StandardNotation))
         self.setGainPlaceholders()
+        self.setObjectPlaceholders()
 
         imgPath = dirname(abspath(__file__)) + "/images/rec0.png"
         self.rec0 = QPixmap(imgPath)
@@ -451,6 +472,7 @@ class SerialHandler(QWidget):
 
             for button in self.serialButtons:
                 button.setEnabled(True)
+            self.updateControllerModeButtons()
 
         elif status == ConnectionStatus.DeviceNotFound:  # When the port could not be opened
             self.isConnecting = False
@@ -689,13 +711,16 @@ class SerialHandler(QWidget):
                         "Error Parsing: Units, " + str(e))
                 else:
                     self.setMotorStatusText()
+                    self.setObjectPlaceholders()
             elif msgType == 'X':
                 self.infoMessagesEdit.append(
                     f"<span style=\" font-size:8pt; font-weight:400; color:red;\" >The device stopped the motors because it "
                     f"received no message from this app for {msg} ms. Its waveforms and virtual object were reset.</span>")
                 for params in self.hapticDevice.waveformParams:
                     params.update({'T': 'CONSTANT', 'F': 0, 'A': 0, 'O': 0})
+                self.hapticDevice.pseudoObject.update({'width': 0, 'stiffness': 0, 'damping': 0})
                 self.setWaveStatusText()
+                self.setObjectPlaceholders()
                 # The device disarms the timeout when it fires, so arm it again
                 self.messageToSend.emit(f"T{st.HOST_TIMEOUT_MS}")
             elif msgType == 'W':
@@ -724,10 +749,19 @@ class SerialHandler(QWidget):
         if hasStatus:
             self.newData.emit()
 
+    def updateControllerModeButtons(self) -> None:
+        isFinger = self.gainsRadio1.isChecked()
+        mode = self.hapticDevice.fingerControlMode if isFinger else self.hapticDevice.palmControlMode
+        self.positionControlButton.setChecked(mode == 0)
+        self.velocityControlButton.setChecked(mode == 1)
+        self.forceControlButton.setChecked(mode == 2 and isFinger)
+        self.forceControlButton.setEnabled(self.isSerialConnected and isFinger)
+
     def setGainPlaceholders(self) -> None:
         self.KpEdit.setText("")
         self.KiEdit.setText("")
         self.KdEdit.setText("")
+        self.updateControllerModeButtons()
         if self.gainsRadio1.isChecked():
             self.KpEdit.setPlaceholderText(
                 f"{self.hapticDevice.fingerGains[self.hapticDevice.fingerControlMode * 3 + 0]:.3f}")
@@ -742,6 +776,32 @@ class SerialHandler(QWidget):
                 f"{self.hapticDevice.palmGains[self.hapticDevice.palmControlMode * 3 + 1]:.5f}")
             self.KdEdit.setPlaceholderText(
                 f"{self.hapticDevice.palmGains[self.hapticDevice.palmControlMode * 3 + 2]:.3f}")
+
+    def setObjectPlaceholders(self) -> None:
+        widthCounts = self.hapticDevice.pseudoObject['width']
+        if self.unitCheckBox.isChecked():
+            widthText = f"{widthCounts * st.COUNT_TO_MM:.2f}"
+        else:
+            widthText = str(int(widthCounts) if float(widthCounts).is_integer() else widthCounts)
+        self.widthEdit.setPlaceholderText(widthText)
+        self.stiffnessEdit.setPlaceholderText(str(self.hapticDevice.pseudoObject['stiffness']))
+        self.dampingEdit.setPlaceholderText(str(self.hapticDevice.pseudoObject['damping']))
+
+    def onStopAllShortcut(self) -> None:
+        if self.isSerialConnected:
+            self.stopAll()
+
+    def stopAll(self) -> None:
+        self.stopFingerButton.setChecked(True)
+        self.stopFinger()
+        self.stopPalmButton.setChecked(True)
+        self.stopPalm()
+
+    def homeFinger(self) -> None:
+        self.messageToSend.emit("H0")
+
+    def homePalm(self) -> None:
+        self.messageToSend.emit("H1")
 
     def stopFinger(self) -> None:
         stop = "0"
@@ -776,6 +836,7 @@ class SerialHandler(QWidget):
                                          "Are you sure you want to change the controller mode? It may cause the motor to move unstably.",
                                          QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
             if reply == QMessageBox.No:
+                self.updateControllerModeButtons()
                 return
         self.KpEdit.setText("")
         self.KiEdit.setText("")
@@ -787,19 +848,21 @@ class SerialHandler(QWidget):
             motorIndex = "1"
 
         controllerMode = "0"
-        if(self.sender().objectName() == "positionControlButton"):
+        sender = self.sender()
+        senderName = sender.objectName() if sender is not None else ""
+        if senderName == "positionControlButton":
             controllerMode = "0"
             if motorIndex == "0":
                 self.hapticDevice.fingerControlMode = 0
             elif motorIndex == "1":
                 self.hapticDevice.palmControlMode = 0
-        elif(self.sender().objectName() == "velocityControlButton"):
+        elif senderName == "velocityControlButton":
             controllerMode = "1"
             if motorIndex == "0":
                 self.hapticDevice.fingerControlMode = 1
             elif motorIndex == "1":
                 self.hapticDevice.palmControlMode = 1
-        elif(self.sender().objectName() == "forceControlButton"):
+        elif senderName == "forceControlButton":
             controllerMode = "2"
             if motorIndex == "0":
                 self.hapticDevice.fingerControlMode = 2
@@ -859,8 +922,16 @@ class SerialHandler(QWidget):
         self.messageToSend.emit(msg)
 
     @ pyqtSlot()
+    def sendAllWaveParameters(self) -> None:
+        self.sendWaveType()
+        for edit, paramType in ((self.freqEdit, 'F'), (self.ampEdit, 'A'), (self.offsetEdit, 'O')):
+            if edit.text() != "":
+                self.sendWaveParameter(edit, paramType)
+
+    @ pyqtSlot()
     def sendGain(self, textEdit: QTextEdit, gainType) -> None:
         value = textEdit.text()
+        textEdit.setText("")
         if value == "":
             return
         if self.gainsRadio1.isChecked():
@@ -872,14 +943,76 @@ class SerialHandler(QWidget):
         self.messageToSend.emit(msg)
 
     @ pyqtSlot()
+    def sendAllGains(self) -> None:
+        for edit, gainType in ((self.KpEdit, "P"), (self.KiEdit, "I"), (self.KdEdit, "D")):
+            if edit.text() != "":
+                self.sendGain(edit, gainType)
+
+    @ pyqtSlot()
     def sendPsuedoObject(self) -> None:
-        width = self.widthEdit.text() if self.widthEdit.text() != "" else "0"
-        stiffness = self.stiffnessEdit.text() if self.stiffnessEdit.text() != "" else "0"
-        damping = self.dampingEdit.text() if self.dampingEdit.text() != "" else "0"
+        widthText = self.widthEdit.text()
+        stiffnessText = self.stiffnessEdit.text()
+        dampingText = self.dampingEdit.text()
+        self.widthEdit.setText("")
+        self.stiffnessEdit.setText("")
+        self.dampingEdit.setText("")
+
+        width = self.hapticDevice.pseudoObject['width']
+        stiffness = self.hapticDevice.pseudoObject['stiffness']
+        damping = self.hapticDevice.pseudoObject['damping']
+
+        if widthText != "":
+            try:
+                widthVal = float(widthText)
+            except ValueError:
+                self.infoMessagesEdit.append(f"Invalid number: {widthText}")
+                return
+            if self.unitCheckBox.isChecked():
+                if st.COUNT_TO_MM == 0:
+                    self.infoMessagesEdit.append(
+                        "<span style=\"font-size:8pt; font-weight:400; color:red;\" >"
+                        "The mm conversion factor is 0. Set it in the settings or uncheck the mm box.</span>")
+                    return
+                width = round(widthVal / st.COUNT_TO_MM)
+            else:
+                width = int(widthVal) if widthVal.is_integer() else widthVal
+
+        if stiffnessText != "":
+            try:
+                stiffnessVal = float(stiffnessText)
+            except ValueError:
+                self.infoMessagesEdit.append(f"Invalid number: {stiffnessText}")
+                return
+            stiffness = int(stiffnessVal) if stiffnessVal.is_integer() else stiffnessVal
+
+        if dampingText != "":
+            try:
+                dampingVal = float(dampingText)
+            except ValueError:
+                self.infoMessagesEdit.append(f"Invalid number: {dampingText}")
+                return
+            damping = int(dampingVal) if dampingVal.is_integer() else dampingVal
+
+        self.hapticDevice.pseudoObject['width'] = width
+        self.hapticDevice.pseudoObject['stiffness'] = stiffness
+        self.hapticDevice.pseudoObject['damping'] = damping
+        self.setObjectPlaceholders()
 
         msg = f"P{width}{st.SERIAL_SEPERATOR_CH}{stiffness}{st.SERIAL_SEPERATOR_CH}{damping}"
         # self.serialWorker.writeSerial(msg)
         self.messageToSend.emit(msg)
+
+    def loadSettings(self, settings: QSettings) -> None:
+        baudrate = settings.value("serial/baudrate", None)
+        if baudrate is not None:
+            self.baudrateEdit.setText(str(baudrate))
+        unitsInMm = settings.value("serial/unitsInMm", None)
+        if unitsInMm is not None:
+            self.unitCheckBox.setChecked(str(unitsInMm).lower() == "true")
+
+    def saveSettings(self, settings: QSettings) -> None:
+        settings.setValue("serial/baudrate", self.baudrateEdit.text())
+        settings.setValue("serial/unitsInMm", self.unitCheckBox.isChecked())
 
     def setMotorStatusText(self):
         self.fingerPosLabel.setText(str(int(self.hapticDevice.fingerPos)))
@@ -989,7 +1122,7 @@ class SerialHandler(QWidget):
             self.animator.raise_()
             self.animator.activateWindow()
             return
-        self.animator = QAnimator()
+        self.animator = QAnimator(hapticDevice=self.hapticDevice)
         # Connected to the methods of the animator, so the connections are removed when it is closed and deleted
         self.dataToPlot.connect(self.animator.updateData)
         self.newData.connect(self.animator.updateDataCount)

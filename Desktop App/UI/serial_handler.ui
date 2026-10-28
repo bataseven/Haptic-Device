@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>851</width>
-    <height>1019</height>
+    <height>820</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -126,7 +126,7 @@ border: 0px;
          <property name="minimumSize">
           <size>
            <width>150</width>
-           <height>50</height>
+           <height>38</height>
           </size>
          </property>
          <property name="maximumSize">
@@ -173,7 +173,7 @@ border: 0px;
          <property name="minimumSize">
           <size>
            <width>150</width>
-           <height>50</height>
+           <height>38</height>
           </size>
          </property>
          <property name="maximumSize">
@@ -201,7 +201,7 @@ border: 0px;
          <property name="minimumSize">
           <size>
            <width>150</width>
-           <height>50</height>
+           <height>38</height>
           </size>
          </property>
          <property name="maximumSize">
@@ -234,7 +234,7 @@ border: 0px;
      <item>
       <layout class="QGridLayout" name="gridLayout_5">
        <property name="verticalSpacing">
-        <number>6</number>
+        <number>3</number>
        </property>
        <item row="5" column="3">
         <widget class="QLabel" name="palmModeLabel">
@@ -304,8 +304,8 @@ border: 0px;
          </item>
         </layout>
        </item>
-       <item row="2" column="1">
-        <widget class="QPushButton" name="stopFingerButton">
+       <item row="2" column="0">
+        <widget class="QPushButton" name="stopAllButton">
          <property name="enabled">
           <bool>false</bool>
          </property>
@@ -315,22 +315,58 @@ border: 0px;
            <bold>true</bold>
           </font>
          </property>
+         <property name="toolTip">
+          <string>Stop both motors immediately (Shortcut: Esc)</string>
+         </property>
          <property name="text">
-          <string>STOP FINGER</string>
-         </property>
-         <property name="checkable">
-          <bool>true</bool>
-         </property>
-         <property name="autoRepeat">
-          <bool>false</bool>
-         </property>
-         <property name="default">
-          <bool>false</bool>
-         </property>
-         <property name="flat">
-          <bool>false</bool>
+          <string>STOP ALL (Esc)</string>
          </property>
         </widget>
+       </item>
+       <item row="2" column="1">
+        <layout class="QHBoxLayout" name="fingerButtonsLayout">
+         <item>
+          <widget class="QPushButton" name="stopFingerButton">
+           <property name="enabled">
+            <bool>false</bool>
+           </property>
+           <property name="font">
+            <font>
+             <weight>75</weight>
+             <bold>true</bold>
+            </font>
+           </property>
+           <property name="text">
+            <string>STOP FINGER</string>
+           </property>
+           <property name="checkable">
+            <bool>true</bool>
+           </property>
+           <property name="autoRepeat">
+            <bool>false</bool>
+           </property>
+           <property name="default">
+            <bool>false</bool>
+           </property>
+           <property name="flat">
+            <bool>false</bool>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="homeFingerButton">
+           <property name="enabled">
+            <bool>false</bool>
+           </property>
+           <property name="toolTip">
+            <string>Home the finger motor to its limit switch</string>
+           </property>
+           <property name="text">
+            <string>Home Finger</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
        </item>
        <item row="0" column="1">
         <widget class="QLabel" name="fingerLabel">
@@ -396,23 +432,40 @@ border: 0px;
         </widget>
        </item>
        <item row="2" column="3">
-        <widget class="QPushButton" name="stopPalmButton">
-         <property name="enabled">
-          <bool>false</bool>
-         </property>
-         <property name="font">
-          <font>
-           <weight>75</weight>
-           <bold>true</bold>
-          </font>
-         </property>
-         <property name="text">
-          <string>STOP PALM</string>
-         </property>
-         <property name="checkable">
-          <bool>true</bool>
-         </property>
-        </widget>
+        <layout class="QHBoxLayout" name="palmButtonsLayout">
+         <item>
+          <widget class="QPushButton" name="stopPalmButton">
+           <property name="enabled">
+            <bool>false</bool>
+           </property>
+           <property name="font">
+            <font>
+             <weight>75</weight>
+             <bold>true</bold>
+            </font>
+           </property>
+           <property name="text">
+            <string>STOP PALM</string>
+           </property>
+           <property name="checkable">
+            <bool>true</bool>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="homePalmButton">
+           <property name="enabled">
+            <bool>false</bool>
+           </property>
+           <property name="toolTip">
+            <string>Home the palm motor to its lower limit switch</string>
+           </property>
+           <property name="text">
+            <string>Home Palm</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
        </item>
        <item row="0" column="0">
         <widget class="QLabel" name="label_21">
@@ -942,6 +995,9 @@ border: 0px;
              <property name="text">
               <string>Position Control</string>
              </property>
+             <property name="checkable">
+              <bool>true</bool>
+             </property>
             </widget>
            </item>
            <item>
@@ -952,6 +1008,9 @@ border: 0px;
              <property name="text">
               <string>Velocity Control</string>
              </property>
+             <property name="checkable">
+              <bool>true</bool>
+             </property>
             </widget>
            </item>
            <item>
@@ -961,6 +1020,9 @@ border: 0px;
              </property>
              <property name="text">
               <string>Force Control</string>
+             </property>
+             <property name="checkable">
+              <bool>true</bool>
              </property>
             </widget>
            </item>
@@ -1085,6 +1147,19 @@ border: 0px;
            </property>
            <property name="placeholderText">
             <string>0</string>
+           </property>
+          </widget>
+         </item>
+         <item row="3" column="2">
+          <widget class="QPushButton" name="gainsSendAllButton">
+           <property name="enabled">
+            <bool>false</bool>
+           </property>
+           <property name="toolTip">
+            <string>Send all non-empty PID gain fields at once</string>
+           </property>
+           <property name="text">
+            <string>Send All</string>
            </property>
           </widget>
          </item>
@@ -1391,6 +1466,19 @@ border: 0px;
            </item>
           </layout>
          </item>
+         <item row="7" column="3">
+          <widget class="QPushButton" name="waveSendAllButton">
+           <property name="enabled">
+            <bool>false</bool>
+           </property>
+           <property name="toolTip">
+            <string>Send waveform type and all non-empty frequency, amplitude, and offset fields at once</string>
+           </property>
+           <property name="text">
+            <string>Send All</string>
+           </property>
+          </widget>
+         </item>
         </layout>
        </item>
        <item>
@@ -1433,53 +1521,80 @@ border: 0px;
          <item>
           <layout class="QHBoxLayout" name="horizontalLayout_9">
            <item>
-            <widget class="QLabel" name="label1111_2">
+            <widget class="QLabel" name="widthLabel">
+             <property name="toolTip">
+              <string>Nominal object width in encoder counts (or mm when 'Units in mm' is checked)</string>
+             </property>
              <property name="text">
-              <string>Width: </string>
+              <string>Width [cnt]: </string>
              </property>
             </widget>
            </item>
            <item>
             <widget class="QLineEdit" name="widthEdit">
+             <property name="toolTip">
+              <string>Nominal object width in encoder counts (or mm when 'Units in mm' is checked)</string>
+             </property>
              <property name="text">
               <string/>
              </property>
              <property name="maxLength">
               <number>12</number>
+             </property>
+             <property name="placeholderText">
+              <string>0</string>
              </property>
             </widget>
            </item>
            <item>
             <widget class="QLabel" name="label_2223">
+             <property name="toolTip">
+              <string>Spring stiffness in N/mm (values &gt;= 80 N/mm act as a rigid body)</string>
+             </property>
              <property name="text">
-              <string>Stiffness: </string>
+              <string>Stiffness [N/mm]: </string>
              </property>
             </widget>
            </item>
            <item>
             <widget class="QLineEdit" name="stiffnessEdit">
+             <property name="toolTip">
+              <string>Spring stiffness in N/mm (values &gt;= 80 N/mm act as a rigid body)</string>
+             </property>
              <property name="text">
               <string/>
              </property>
              <property name="maxLength">
               <number>12</number>
+             </property>
+             <property name="placeholderText">
+              <string>0</string>
              </property>
             </widget>
            </item>
            <item>
             <widget class="QLabel" name="label_334">
+             <property name="toolTip">
+              <string>Viscous damping coefficient in N·s/mm</string>
+             </property>
              <property name="text">
-              <string>Damping: </string>
+              <string>Damping [N·s/mm]: </string>
              </property>
             </widget>
            </item>
            <item>
             <widget class="QLineEdit" name="dampingEdit">
+             <property name="toolTip">
+              <string>Viscous damping coefficient in N·s/mm</string>
+             </property>
              <property name="text">
               <string/>
              </property>
              <property name="maxLength">
               <number>12</number>
+             </property>
+             <property name="placeholderText">
+              <string>0</string>
              </property>
             </widget>
            </item>
@@ -1596,7 +1711,7 @@ border: 0px;
        <property name="minimumSize">
         <size>
          <width>0</width>
-         <height>150</height>
+         <height>100</height>
         </size>
        </property>
        <property name="readOnly">

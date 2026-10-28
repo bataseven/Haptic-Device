@@ -35,6 +35,9 @@ class HapticDevice(QObject):
         # Waveform related variables of the haptic device
         self.waveformParams = [{'T':'CONSTANT', 'F':0, 'A':0, 'O':0, 'V':0}, {'T':'CONSTANT', 'F':0, 'A':0, 'O':0, 'V':0}]
 
+        # Virtual object parameters: width (counts), stiffness (N/mm), damping (N*s/mm)
+        self.pseudoObject = {'width': 0, 'stiffness': 0, 'damping': 0}
+
         self.forceValues = 4 * [0]
         self.netForce = 0
 

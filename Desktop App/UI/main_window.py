@@ -2,7 +2,7 @@ import time
 from PyQt5.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QDesktopWidget, QMessageBox, QLabel, QPushButton, QDialogButtonBox, QApplication
 from UI.control_page import ControlPage
 from PyQt5.QtGui import QIcon
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QSettings
 from PyQt5 import sip
 from os.path import dirname, abspath
 from UI.serial_commands_window import SerialCommandsWindow
@@ -11,15 +11,18 @@ from UI.data_recorder import DataRecorder
 from .devices import HapticDevice
 from .settings import serialSettings as st
 
+
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, settings: QSettings = None):
         super().__init__()
         self.setWindowTitle("Haptic Device Interface")
+        self.settings = settings if settings is not None else QSettings("KocUniversity", "HapticDeviceInterface")
         self.hapticDevice = HapticDevice()
         self.settingsWindow = QWidget()
         self.serialCommandsWindow = QWidget()
         self.dataRecorder = QWidget()
         self.setupUi()
+        self.controlPage.serialHandler.loadSettings(self.settings)
 
         # Activate the record data menu action when the serial is connected and deactivate it when the serial is disconnected
         self.controlPage.serialHandler.serialConnected.connect(self.recordDataAction.setEnabled)
@@ -87,6 +90,8 @@ class MainWindow(QMainWindow):
         serialHandler = self.controlPage.serialHandler
         self.dataRecorder = DataRecorder(
             parent=self.parent(), hapticDevice=self.hapticDevice, portName=serialHandler.portName)
+        self.dataRecorder.loadSettings(self.settings)
+        self.dataRecorder.recordingInProgress.connect(lambda _: self.dataRecorder.saveSettings(self.settings))
         self.dataRecorder.show()
         # Connected to the methods of the recorder, so the connections are removed when it is deleted
         serialHandler.serialConnected.connect(self.dataRecorder.onSerialConnected)
@@ -96,6 +101,9 @@ class MainWindow(QMainWindow):
         self.dataRecorder.recordingInProgress.connect(serialHandler.recording)
 
     def closeEvent(self, event):
+        self.controlPage.serialHandler.saveSettings(self.settings)
+        if isinstance(self.dataRecorder, DataRecorder) and not sip.isdeleted(self.dataRecorder):
+            self.dataRecorder.saveSettings(self.settings)
         # Disconnect properly, so the device disarms its host timeout and keeps working with the next program
         self.controlPage.serialHandler.shutdown()
         for window in QApplication.topLevelWidgets():
@@ -106,7 +114,6 @@ class MainWindow(QMainWindow):
         resolution = QDesktopWidget().screenGeometry()
         widget.move(int((resolution.width() / 2) - (widget.frameSize().width() / 2)),
                     int((resolution.height() / 2) - (widget.frameSize().height() / 2)))
-        
 
     def about(self):
         # Show a message dialog

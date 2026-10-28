@@ -112,6 +112,85 @@ class SerialHandlerWaveParameterTest(unittest.TestCase):
         self.assertEqual(self.sent, [])
         self.assertIn("conversion factor is 0", self.handler.infoMessagesEdit.toPlainText())
 
+    def test_send_all_wave_parameters_sends_type_and_non_empty_fields(self):
+        self.handler.waveCombo.setCurrentIndex(4)  # SINUSOIDAL
+        self.handler.freqEdit.setText("2.5")
+        self.handler.ampEdit.setText("1000")
+        self.handler.offsetEdit.setText("")
+        self.handler.sendAllWaveParameters()
+        self.assertEqual(self.sent, ["WT0#4", "WF0#2.5", "WA0#1000"])
+        self.assertEqual(self.handler.freqEdit.text(), "")
+        self.assertEqual(self.handler.ampEdit.text(), "")
+
+
+class SerialHandlerControlAndObjectTest(unittest.TestCase):
+    """Virtual object partial updates, Send All gains, Stop All, Home Palm, and mode button states."""
+
+    def setUp(self):
+        self.device = HapticDevice()
+        self.handler = SerialHandler(self.device)
+        self.sent = []
+        self.handler.messageToSend.connect(self.sent.append)
+        oldFactor = st.COUNT_TO_MM
+        self.addCleanup(setattr, st, "COUNT_TO_MM", oldFactor)
+
+    def test_partial_virtual_object_edit_keeps_previous_fields(self):
+        self.handler.widthEdit.setText("50000")
+        self.handler.stiffnessEdit.setText("2.5")
+        self.handler.dampingEdit.setText("0.1")
+        self.handler.sendPsuedoObject()
+        self.assertEqual(self.sent[-1], "P50000#2.5#0.1")
+        self.assertEqual(self.handler.widthEdit.text(), "")
+        self.assertEqual(self.handler.widthEdit.placeholderText(), "50000")
+
+        # Editing only stiffness preserves width and damping
+        self.handler.stiffnessEdit.setText("10")
+        self.handler.sendPsuedoObject()
+        self.assertEqual(self.sent[-1], "P50000#10#0.1")
+        self.assertEqual(self.device.pseudoObject, {'width': 50000, 'stiffness': 10, 'damping': 0.1})
+
+    def test_virtual_object_width_supports_mm_conversion(self):
+        st.COUNT_TO_MM = 0.01
+        self.handler.unitCheckBox.setChecked(True)
+        self.handler.widthEdit.setText("15")
+        self.handler.stiffnessEdit.setText("5")
+        self.handler.sendPsuedoObject()
+        self.assertEqual(self.sent[-1], "P1500#5#0")
+        self.assertEqual(self.handler.widthEdit.placeholderText(), "15.00")
+
+    def test_send_gain_clears_input_and_send_all_gains_sends_non_empty(self):
+        self.handler.KpEdit.setText("1.25")
+        self.handler.KdEdit.setText("0.5")
+        self.handler.sendAllGains()
+        self.assertEqual(self.sent, ["KP0#1.25", "KD0#0.5"])
+        self.assertEqual(self.handler.KpEdit.text(), "")
+        self.assertEqual(self.handler.KdEdit.text(), "")
+
+    def test_stop_all_and_home_motors(self):
+        self.handler.stopAll()
+        self.assertTrue(self.handler.stopFingerButton.isChecked())
+        self.assertTrue(self.handler.stopPalmButton.isChecked())
+        self.assertEqual(self.sent, ["S01", "S11"])
+
+        self.handler.homeFinger()
+        self.assertEqual(self.sent[-1], "H0")
+        self.handler.homePalm()
+        self.assertEqual(self.sent[-1], "H1")
+
+    def test_controller_mode_buttons_highlight_active_mode_and_disable_force_for_palm(self):
+        self.handler.isSerialConnected = True
+        self.handler.gainsRadio1.setChecked(True)
+        self.handler.parseMessage("<M02><M10>")
+        self.assertTrue(self.handler.forceControlButton.isChecked())
+        self.assertTrue(self.handler.forceControlButton.isEnabled())
+
+        # Selecting Palm switches checked button to Position and disables Force Control
+        self.handler.gainsRadio2.setChecked(True)
+        self.handler.setGainPlaceholders()
+        self.assertTrue(self.handler.positionControlButton.isChecked())
+        self.assertFalse(self.handler.forceControlButton.isChecked())
+        self.assertFalse(self.handler.forceControlButton.isEnabled())
+
 
 if __name__ == "__main__":
     unittest.main()
