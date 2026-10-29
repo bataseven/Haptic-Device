@@ -65,6 +65,10 @@ class SerialHandlerParserTest(unittest.TestCase):
         self.assertEqual(self.device.waveformParams[1]['A'], 0)
         self.assertIn(f"T{st.HOST_TIMEOUT_MS}", self.sent)
 
+    def test_homing_failure_is_shown(self):
+        self.handler.parseMessage("<Z1>")
+        self.assertIn("Homing the palm failed", self.handler.infoMessagesEdit.toPlainText())
+
     def test_malformed_messages_do_not_raise(self):
         self.handler.parseMessage("<Hxyz><F1#a><M><Rabc><U1>")
         self.assertIn("Error Parsing", self.handler.infoMessagesEdit.toPlainText())

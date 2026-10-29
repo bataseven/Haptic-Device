@@ -20,6 +20,7 @@ class MotorWithEncoder {
     static int motorCount;
 
     MotorWithEncoder(uint8_t motorPin1, uint8_t motorPin2, uint8_t encoderPin1, uint8_t encoderPin2);
+    ~MotorWithEncoder();
 
     
     double err = 0;
@@ -30,12 +31,17 @@ class MotorWithEncoder {
     void brake();
     void release();
     void home();
+    bool isHoming();
+    bool isLimitSwitchPressed();
+    bool isSharedLimitSwitchBusy();
+    bool homingFailed();
     void rotate(int, double);
     void forceRotate(int, double);
 
     void resetEncoderPos();
     void setEncoderPos(int32_t);
-    void setLimitSwitchPin(int8_t);
+    void setLimitSwitchPin(int8_t, int direction = -1);
+    int getLimitSwitchDirection();
     void setDesiredPosition(long);
     void setDesiredVelocity(long);
     void setDesiredForce(double);
@@ -138,16 +144,39 @@ class MotorWithEncoder {
 
     bool _isSteadyState = false;
     
-    enum HomingState{IDLE, MOVING_TO_LIMIT_SWITCH, MOVING_TO_ZERO};
+    static const int _maxMotors = 8;
+    static MotorWithEncoder* _motors[_maxMotors];
+    static int _activeMotorCount;
+
+    enum HomingState {
+        IDLE,
+        WAITING_FOR_SHARED_SWITCH,
+        CLEARING_SHARED_SWITCH,
+        MOVING_TO_LIMIT_SWITCH,
+        MOVING_TO_ZERO
+    };
     HomingState _homingState = HomingState::IDLE;
     bool _homing = false;
     bool _hasLimitSwitch = false;
     uint8_t _limitSwitchPin;
+    int8_t _limitSwitchDirection = -1;  // -1 if switch is at lower end (0), +1 if at upper end
+    bool _rawLimitSwitchState = false;
     bool _limitSwitchState = false;
     bool _limitSwitchStatePrev = false;
     bool _limitSwitchReading = false;
     bool _limitSwitchReadingPrev = false;
     unsigned long _limitSwitchDebounceTime = 0;
+    unsigned long _homingStateStartTime = 0;
+    bool _triedClearingOtherMotor = false;
+    bool _resumeHomingAfterClearing = false;  // Clearing the switch for another motor interrupted this motor's homing
+    bool _homingFailed = false;
+
+    double _lastDrivePulse = 0;
+    double _driveAtUpdateStart = 0;
+    int8_t _lastMoveDirection = 0;
+    unsigned long _lastMoveToSwitchTime = 0;
+    int8_t _lastDriveDirection = 0;
+    unsigned long _lastDriveToSwitchTime = 0;
 
     uint8_t _phasePin;   // Phase pin for PHASE/ENABLE mode
     uint8_t _enablePin;  // Enable pin for PHASE/ENABLE mode
@@ -180,9 +209,18 @@ class MotorWithEncoder {
     bool _hasSoftPosLimit = false;
     bool _hardLimitViolation = false;
     bool _softLimitViolation = false;
+    bool _isOppositeLimitViolation = false;
     bool _isDirectionSafeToMove = true;
     bool _canMove = true;
     
+    void _updateLimitSwitch();
+    void _applyLimitSwitchHomePosition();
+    void _abortSharedHoming();
+    bool _isActivelyHoming();
+    bool _hasEncoderMotionTowardSwitch(unsigned long);
+    bool _isMovingTowardLimitSwitch(unsigned long);
+    double _distanceFromSwitchLimit();
+    MotorWithEncoder* _inferLimitSwitchOwner(unsigned long);
     void _home();
     void _resetPositionHistory(int32_t);
     long long _calculatePositionPID(long);

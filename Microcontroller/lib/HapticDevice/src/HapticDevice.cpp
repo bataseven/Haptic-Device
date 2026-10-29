@@ -99,11 +99,13 @@ void HapticDevice::initialize() {
     // Configuration to NDoF mode (Currently defaulted to NDoF)
     // bno055_set_operation_mode(OPERATION_MODE_NDOF);
 
-    // GPIO2 is the switch
-    palm->setLimitSwitchPin(2);
-    palm->home();
+    // GPIO2 is shared by the finger and palm limit switches (wired in parallel)
+    finger->setLimitSwitchPin(2, FINGER_LIMIT_SWITCH_DIRECTION);
+    palm->setLimitSwitchPin(2, PALM_LIMIT_SWITCH_DIRECTION);
     palm->setSoftPosLimit(PALM_LOWER_SOFT_LIMIT, PALM_UPPER_SOFT_LIMIT);
     palm->setHardPosLimit(PALM_LOWER_HARD_LIMIT, PALM_UPPER_HARD_LIMIT);
+    palm->home();
+    finger->home();
 }
 
 void HapticDevice::_LEDUpdate() {
@@ -118,6 +120,12 @@ void HapticDevice::_LEDUpdate() {
     if (hostTimedOut) { // If the motors were stopped because the host stopped sending messages, light up purple
         led.setPixelColor(0, PURPLE);
         _currentColor = PURPLE;
+    }
+
+    if (finger->homingFailed() || palm->homingFailed()) { // If homing gave up because the limit switch did not
+                                                          // release, light up red until the motor is homed again
+        led.setPixelColor(0, RED);
+        _currentColor = RED;
     }
 
     if (obj.inContact) { // If an object is in contact, light up blue
@@ -194,6 +202,11 @@ void HapticDevice::update() {
         _encoderResetLEDTimer = millis();
         palm->resetEncoderPos();
     }
+    if (palmButtonState == FunctionalButton::DoubleHold && !fingerButton->read()) { // Move down to the limit switch
+        noInterrupts(); // home() also changes the finger's state, which the control loop interrupt uses
+        palm->home();
+        interrupts();
+    }
 
     if (fingerButtonState == FunctionalButton::SingleHold && palmButtonState == FunctionalButton::SingleHold &&
         !_imuActivationChanged) {
@@ -267,7 +280,9 @@ void HapticDevice::fingerControlLoop() {
 
     finger->setForce(netFingerForce);
 
-    if (!(fingerButtonState == FunctionalButton::SingleHold || fingerButtonState == FunctionalButton::DoubleHold)) {
+    if (finger->isHoming() || finger->isSharedLimitSwitchBusy()) {
+        holdingRigidBody = false;
+    } else if (!(fingerButtonState == FunctionalButton::SingleHold || fingerButtonState == FunctionalButton::DoubleHold)) {
         if (finger->getControllerMode() != MotorWithEncoder::FORCE_CONTROL) {
             holdingRigidBody = false;
             steadyState = finger->go(); // Calculate the internal controller output and actuate the motor
@@ -312,12 +327,14 @@ void HapticDevice::fingerControlLoop() {
 void HapticDevice::palmControlLoop() {
     palm->setDesiredVelocity(generatedPalmWave);
     palm->setDesiredPosition(generatedPalmWave);
-    if (!(palmButtonState == FunctionalButton::SingleHold || palmButtonState == FunctionalButton::DoubleHold)) {
+    if (palm->isHoming() || palm->isSharedLimitSwitchBusy()) {
+        return;
+    } else if (!(palmButtonState == FunctionalButton::SingleHold || palmButtonState == FunctionalButton::DoubleHold)) {
         palm->go();
     } else if (palmButtonState == FunctionalButton::SingleHold && !fingerButton->read()) // Move up
         palm->forceRotate(1, .5);
-    else if (palmButtonState == FunctionalButton::DoubleHold && !fingerButton->read()) // Move down
-        palm->home();
+    // Double holding the palm button homes the palm. update() starts it, because home() must not be called from this
+    // interrupt.
     // palm->forceRotate(1, 1);
 }
 

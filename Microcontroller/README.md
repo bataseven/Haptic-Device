@@ -57,7 +57,7 @@ pio test -e native
 | 3, 4 | Finger encoder (A, B) |
 | 14, 15 | Palm motor driver (phase, enable) |
 | 21, 20 | Palm encoder (A, B) |
-| 2 | Palm limit switch, used for homing |
+| 2 | Finger and palm limit switches (wired in parallel), used for homing |
 | A9, A8 | Thumb inner and thumb outer force sensors |
 | A3, A2 | Index inner and index outer force sensors |
 | 10 | Finger button |
@@ -83,6 +83,7 @@ The motors are driven with 18 kHz PWM.
 | Green | Connected |
 | Blue | The finger is touching the virtual object |
 | Purple | The motors are stopped because the program stopped sending messages (see the host timeout below) |
+| Red | Homing gave up because the limit switch did not release (see homing below). Stays until the motor is homed again. |
 | White | A button is held |
 | Pink, for 0.5 s | An encoder position was set to 0 |
 | Off | A button is double clicked and held |
@@ -92,6 +93,7 @@ The motors are driven with 18 kHz PWM.
 - **Position limits.** Each motor has soft limits, where the motor coasts, and hard limits, where it brakes. They can be changed with the `L` message or in the Settings window of the desktop app.
 - **Stop.** The `S` message, or the STOP buttons of the desktop app, brake a motor until it is released.
 - **Host timeout.** After a program sends `T1000`, the device expects a message at least every 1000 ms. If none arrives, it releases the motors, sets the waveforms to constant 0, removes the virtual object and sends `X`. The next message of any kind resumes. The desktop app arms it when it connects, sends a heartbeat (`A`) every 250 ms, and disarms it (`T0`) when it disconnects. It is off unless a program arms it, so programs that don't use it are not affected.
+- **Homing.** The finger and palm limit switches are wired in parallel to pin 2, so the device cannot see which one is pressed. Only one motor homes at a time, and the other motor is braked and not controlled until it finishes, so every press belongs to the homing motor. The palm homes at power on, then the finger. If the switch does not release within 500 ms of backing off, the other motor backs off its switch for at most 500 ms. If the switch still does not release, or a motor reaches its opposite position limit, homing gives up, the motors are released, the LED turns red and the device sends `Z`.
 - **Watchdog.** If `loop()` or the control loop stops running for 1 second, the microcontroller resets. During the reset the motor driver inputs are not driven, so the motors are not powered.
 
 ## Serial protocol
@@ -102,14 +104,14 @@ Every message starts with `<` and ends with `>`. The first character is the mess
 
 | Type | Format | Example | Effect |
 |---|---|---|---|
-| `C` | `C` program | `C1` | The connected program: 0 for Unity, 1 for the desktop app. `C1` also makes the device send its gains, limits, controller modes and unit factors. |
+| `C` | `C` program | `C1` | The connected program: 0 for Unity, 1 for the desktop app. `C1` also makes the device send its gains, limits, controller modes, unit factors and failed homings. |
 | `O` | `O` motor mode | `O02` | Sets the controller mode of a motor |
 | `K` | `K` P/I/D motor `#` gain | `KP1#0.5` | Sets a PID gain of the motor's current controller mode |
 | `W` | `W` T/F/A/O generator `#` value | `WF1#0.5` | Sets the type, frequency (Hz), amplitude or offset of a waveform. Types are 0: constant, 1: square, 2: sawtooth, 3: triangular, 4: sinusoidal, 5: trapezoidal. |
 | `P` | `P` width `#` stiffness `#` damping | `P50000#2.5#0.1` | Sets the virtual object. The width is in encoder counts. With a stiffness of at least `RIGID_BODY_STIFFNESS_THRESHOLD` the object is rigid: a separate position controller (`RIGID_BODY_KP/KI/KD` in `HapticDevice.h`) holds the finger at its surface. |
 | `L` | `L` S/H motor lower `#` upper | `LS01000#2000` | Sets the soft (`S`) or hard (`H`) position limits in encoder counts |
 | `S` | `S` motor 0/1 | `S01` | Stops (1) or releases (0) a motor |
-| `H` | `H` motor | `H1` | Homes a motor. Only motors with a limit switch (the palm) can be homed. |
+| `H` | `H` motor | `H1` | Homes a motor (`H0` for finger, `H1` for palm). |
 | `T` | `T` milliseconds | `T1000` | Arms the host timeout. `T0` disarms it. |
 | `A` | `A` | `A` | Heartbeat. Does nothing, but resets the host timeout like any message. |
 | `B` | `B` 0/1 | `B1` | Turns the debug output on or off |
@@ -137,4 +139,5 @@ When requested or changed:
 | `M` | `M` motor mode | `M02` | Controller mode |
 | `U` | `U` finger `#` palm | `U0.000296452618#0.005973945762` | Factors that convert encoder counts to mm |
 | `X` | `X` milliseconds | `X1000` | The motors were stopped because of the host timeout |
+| `Z` | `Z` motor | `Z1` | Homing of the motor gave up, so it is not homed. Sent when it happens and in reply to `C1`. |
 | `B` | `B` 0/1 | `B1` | Debug output was turned on or off |

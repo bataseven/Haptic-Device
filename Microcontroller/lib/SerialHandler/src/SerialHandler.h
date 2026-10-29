@@ -28,6 +28,7 @@ class SerialHandler : public advancedSerial {
     void printLimits();
     void printModes();
     void printUnits();
+    void printHomingFailures();
     void setHapticDevice(HapticDevice* hapticDevice);
     Stream & getSerial();
 
@@ -40,6 +41,8 @@ class SerialHandler : public advancedSerial {
     long _periodicTimer = 0;
     unsigned long _hostTimeout = 0;      // In ms, 0 means disarmed. See the "T" message.
     unsigned long _lastMessageTime = 0;  // millis() when the last complete message was received
+    bool _fingerHomingFailedPrev = false;
+    bool _palmHomingFailedPrev = false;
     HapticDevice* device;
     Stream *_serial;
     char _startMarker = '<';
@@ -51,6 +54,7 @@ class SerialHandler : public advancedSerial {
     void _printPeriodically(float frequency, bool debug);
     void _receiveNonBlocking(void);
     void _checkHostTimeout();
+    void _reportNewHomingFailures();
 
 };
 

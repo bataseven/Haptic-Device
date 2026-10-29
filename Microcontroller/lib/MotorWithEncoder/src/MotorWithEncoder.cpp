@@ -22,6 +22,8 @@ int MotorWithEncoder::maxPulse =
 
 int MotorWithEncoder::motorCount = 0;  // This is used to assign a unique index to each motor object. Is unique
                                        // for every instance of this class.
+MotorWithEncoder* MotorWithEncoder::_motors[MotorWithEncoder::_maxMotors] = {};
+int MotorWithEncoder::_activeMotorCount = 0;
 
 // Construct the object with the motor pins and the encoder pins.
 MotorWithEncoder::MotorWithEncoder(uint8_t motorPin1, uint8_t motorPin2, uint8_t encoderPin1, uint8_t encoderPin2)
@@ -41,6 +43,27 @@ MotorWithEncoder::MotorWithEncoder(uint8_t motorPin1, uint8_t motorPin2, uint8_t
     _lastAccelerations = new double[_accelerationWindowLength]();
     _deltaTs = new long long[_positionWindowLength]();
     _motorIndex = motorCount++;
+    if (_activeMotorCount < _maxMotors) {
+        _motors[_activeMotorCount++] = this;
+    }
+}
+
+MotorWithEncoder::~MotorWithEncoder() {
+    for (int i = 0; i < _activeMotorCount; i++) {
+        if (_motors[i] == this) {
+            for (int j = i; j < _activeMotorCount - 1; j++) {
+                _motors[j] = _motors[j + 1];
+            }
+            _activeMotorCount--;
+            break;
+        }
+    }
+    delete _encoder;
+    delete[] _lastErrors;
+    delete[] _lastVelocities;
+    delete[] _lastPositions;
+    delete[] _lastAccelerations;
+    delete[] _deltaTs;
 }
 
 // Reads the encoder and updates the position, velocity, acceleration attributes.
@@ -48,7 +71,24 @@ MotorWithEncoder::MotorWithEncoder(uint8_t motorPin1, uint8_t motorPin2, uint8_t
 // If a limit is violated or a stop flag is set, motor stops rotating.
 // This should be called before anything else in each loop.
 void MotorWithEncoder::update() {
-    _position = _encoder->read() - _positionOffset;
+    _driveAtUpdateStart = _lastDrivePulse;
+    int32_t currentPos = _encoder->read() - _positionOffset;
+    unsigned long nowMs = millis();
+    int32_t stepIntoSwitch = (currentPos - _position) * _limitSwitchDirection;
+    if (stepIntoSwitch > 0) {
+        _lastMoveDirection = _limitSwitchDirection;
+        _lastMoveToSwitchTime = nowMs;
+    } else if (stepIntoSwitch < 0) {
+        _lastMoveDirection = -_limitSwitchDirection;
+    }
+    double driveIntoSwitch = _driveAtUpdateStart * _limitSwitchDirection;
+    if (driveIntoSwitch > 0) {
+        _lastDriveDirection = _limitSwitchDirection;
+        _lastDriveToSwitchTime = nowMs;
+    } else if (driveIntoSwitch < 0) {
+        _lastDriveDirection = -_limitSwitchDirection;
+    }
+    _position = currentPos;
     long long now = micros();
     _deltaTs[_positionIndex] = now - _updateTimer;
     _lastPositions[_positionIndex] = _position;
@@ -127,13 +167,19 @@ void MotorWithEncoder::update() {
     _accelerationIndex = (_accelerationIndex + 1) % _accelerationWindowLength;
     _updateTimer = now;
 
-    _softLimitViolation =
-        _hasSoftPosLimit && (_position >= _upperSoftPosLimit || _position <= _lowerSoftPosLimit) ? true : false;
-    _hardLimitViolation =
-        _hasHardPosLimit && (_position >= _upperHardPosLimit || _position <= _lowerHardPosLimit) ? true : false;
+    bool upperSoftViolation = _hasSoftPosLimit && _position >= _upperSoftPosLimit;
+    bool lowerSoftViolation = _hasSoftPosLimit && _position <= _lowerSoftPosLimit;
+    bool upperHardViolation = _hasHardPosLimit && _position >= _upperHardPosLimit;
+    bool lowerHardViolation = _hasHardPosLimit && _position <= _lowerHardPosLimit;
+
+    _softLimitViolation = upperSoftViolation || lowerSoftViolation;
+    _hardLimitViolation = upperHardViolation || lowerHardViolation;
+
+    bool upperLimitViolation = upperSoftViolation || upperHardViolation;
+    bool lowerLimitViolation = lowerSoftViolation || lowerHardViolation;
+    _isOppositeLimitViolation = (_limitSwitchDirection < 0) ? upperLimitViolation : lowerLimitViolation;
 
     if (_softLimitViolation || _hardLimitViolation) {
-        bool upperLimitViolation = _position >= min(_upperSoftPosLimit, _upperHardPosLimit);
         if (upperLimitViolation && _pulse > 0)
             _isDirectionSafeToMove = false;
         else if (upperLimitViolation && _pulse <= 0)
@@ -144,9 +190,12 @@ void MotorWithEncoder::update() {
             _isDirectionSafeToMove = true;
     }
 
-    if (hardStop || (_hardLimitViolation && !_isDirectionSafeToMove))
+    // While homing, bypass only the switch-end position limit; keep the opposite limit active.
+    bool enforcePosLimit = !_homing || _isOppositeLimitViolation;
+
+    if (hardStop || (enforcePosLimit && _hardLimitViolation && !_isDirectionSafeToMove))
         this->brake();
-    else if (softStop || (_softLimitViolation && !_isDirectionSafeToMove))
+    else if (softStop || (enforcePosLimit && _softLimitViolation && !_isDirectionSafeToMove))
         this->release();
 
     if (_softLimitViolation || _hardLimitViolation)
@@ -154,16 +203,17 @@ void MotorWithEncoder::update() {
     else
         _canMove = !(hardStop || softStop);
 
-    if (!_canMove) this->resetIntegralTerm();
-
-    // Debounce the limit switch if it is present
-    if (_hasLimitSwitch) {
-        _limitSwitchReading = digitalRead(_limitSwitchPin);
-        if (_limitSwitchReading != _limitSwitchReadingPrev) _limitSwitchDebounceTime = millis();
-        if ((millis() - _limitSwitchDebounceTime) > 30) _limitSwitchState = _limitSwitchReading;
-        _limitSwitchReadingPrev = _limitSwitchReading;
+    // While another motor on the shared limit switch pin is homing, keep this motor still, so that every press of
+    // the switch belongs to the homing motor. Braking also resists the user pushing it into its switch.
+    if (isSharedLimitSwitchBusy()) {
+        this->brake();
+        _canMove = false;
     }
 
+    if (!_canMove) this->resetIntegralTerm();
+
+    // Debounce the limit switch if it is present and infer which switch was pressed if shared
+    _updateLimitSwitch();
     _home();
     _limitSwitchStatePrev = _limitSwitchState;
 }
@@ -274,9 +324,11 @@ void MotorWithEncoder::_drive(double pulse) {
     switch (_driverMode) {
         case DriverMode::PWM:
             if (pulse > 5) {
+                _lastDrivePulse = pulse;
                 analogWrite(_phasePin, abs(pulse));
                 analogWrite(_enablePin, 0);
             } else if (pulse < -5) {
+                _lastDrivePulse = pulse;
                 analogWrite(_phasePin, 0);
                 analogWrite(_enablePin, abs(pulse));
             } else {
@@ -293,6 +345,7 @@ void MotorWithEncoder::_drive(double pulse) {
 // effectively stops the motor from rotating.
 // However "brake()" does it immideatly, whereas, "release()" coasts.
 void MotorWithEncoder::brake() {
+    _lastDrivePulse = 0;
     if (_driverMode == DriverMode::PWM) {
         analogWrite(_enablePin, maxPulse);
         analogWrite(_phasePin, maxPulse);
@@ -308,6 +361,7 @@ void MotorWithEncoder::brake() {
 // stops the motor from rotating. However "brake()" does it
 // immideatly, whereas, "release()" coasts.
 void MotorWithEncoder::release() {
+    _lastDrivePulse = 0;
     if (_driverMode == DriverMode::PWM) {
         analogWrite(_enablePin, 0);
         analogWrite(_phasePin, 0);
@@ -320,46 +374,336 @@ void MotorWithEncoder::release() {
 
 // Set a flag to home the motor
 // Home it in the update function.
+// Call it from the same context as update() (not from an interrupt), because it changes the homing state of the
+// other motors on the shared limit switch pin too.
 void MotorWithEncoder::home() {
     // Do not home if limit switch is not set
     if (!_hasLimitSwitch) return;
-    // Do not home if already homing
-    if (_homing) return;
+    // Do not home if already homing. A motor that is only clearing the switch for another motor homes afterwards.
+    if (_homing) {
+        if (_homingState == CLEARING_SHARED_SWITCH) {
+            _resumeHomingAfterClearing = true;
+            _homingFailed = false;
+        }
+        return;
+    }
+
+    unsigned long now = millis();
+    _triedClearingOtherMotor = false;
+    _resumeHomingAfterClearing = false;
+    _homingFailed = false;
+
+    // If another motor sharing the same limit switch pin is already homing or holding the switch HIGH,
+    // serialize homing so only one motor uses the shared switch at a time.
+    for (int i = 0; i < _activeMotorCount; i++) {
+        MotorWithEncoder* other = _motors[i];
+        if (other == this || !other->_hasLimitSwitch || other->_limitSwitchPin != _limitSwitchPin) continue;
+        if (other->_homing) {
+            _homing = true;
+            _homingState = WAITING_FOR_SHARED_SWITCH;
+            _homingStateStartTime = now;
+            return;
+        }
+        if (other->_limitSwitchState == HIGH) {
+            // The other motor is currently resting on its limit switch, holding the parallel line HIGH.
+            // Back the other motor off its switch first so the shared pin returns to LOW.
+            other->_homing = true;
+            other->_homingState = CLEARING_SHARED_SWITCH;
+            other->_homingStateStartTime = now;
+            other->_resumeHomingAfterClearing = false;
+            _homing = true;
+            _homingState = WAITING_FOR_SHARED_SWITCH;
+            _homingStateStartTime = now;
+            return;
+        }
+    }
+
     _homing = true;
     _homingState = MOVING_TO_LIMIT_SWITCH;
+    _homingStateStartTime = now;
+}
+
+// Returns true if the last homing of this motor gave up (see _abortSharedHoming). Cleared when homing starts again.
+bool MotorWithEncoder::homingFailed() { return _homingFailed; }
+
+bool MotorWithEncoder::isHoming() { return _homing; }
+
+bool MotorWithEncoder::isLimitSwitchPressed() { return _limitSwitchState; }
+
+// Returns true if this motor is not homing but another motor sharing its limit switch pin is.
+// The motor is kept released until the other motor finishes homing.
+bool MotorWithEncoder::isSharedLimitSwitchBusy() {
+    if (!_hasLimitSwitch || _homing) return false;
+    for (int i = 0; i < _activeMotorCount; i++) {
+        MotorWithEncoder* other = _motors[i];
+        if (other != this && other->_hasLimitSwitch && other->_limitSwitchPin == _limitSwitchPin && other->_homing)
+            return true;
+    }
+    return false;
+}
+
+// Sets the encoder position corresponding to this motor's limit switch location:
+// 0 when the switch is at the lower end (-1), or Upper Soft/Hard Limit when at the upper end (+1).
+void MotorWithEncoder::_applyLimitSwitchHomePosition() {
+    if (_limitSwitchDirection > 0) {
+        if (_hasSoftPosLimit) {
+            this->setEncoderPos(_upperSoftPosLimit);
+            return;
+        }
+        if (_hasHardPosLimit) {
+            this->setEncoderPos(_upperHardPosLimit);
+            return;
+        }
+    }
+    this->resetEncoderPos();
+}
+
+// Releases and aborts homing on this motor and any other motor sharing the same limit switch pin.
+// Marks the motors that were homing for themselves as failed; a motor that was only clearing the switch for another
+// motor was not being homed, so its position is still as good as before.
+void MotorWithEncoder::_abortSharedHoming() {
+    for (int i = 0; i < _activeMotorCount; i++) {
+        MotorWithEncoder* m = _motors[i];
+        if (m->_hasLimitSwitch && m->_limitSwitchPin == _limitSwitchPin && m->_homing) {
+            m->_homingFailed = m->_homingState != CLEARING_SHARED_SWITCH || m->_resumeHomingAfterClearing;
+            m->_resumeHomingAfterClearing = false;
+            m->release();
+            m->_homing = false;
+            m->_homingState = IDLE;
+        }
+    }
+}
+
+bool MotorWithEncoder::_isActivelyHoming() {
+    return _homing && (_homingState == MOVING_TO_LIMIT_SWITCH || _homingState == MOVING_TO_ZERO ||
+                       _homingState == CLEARING_SHARED_SWITCH);
+}
+
+bool MotorWithEncoder::_hasEncoderMotionTowardSwitch(unsigned long now) {
+    int32_t livePos = _encoder->read() - _positionOffset;
+    bool liveStepTowardSwitch = ((livePos - _position) * _limitSwitchDirection) > 0;
+    bool recentStepTowardSwitch = (_lastMoveDirection == _limitSwitchDirection) && (now - _lastMoveToSwitchTime <= 250);
+    bool velTowardSwitch = (_velocity * _limitSwitchDirection) > 0;
+    return liveStepTowardSwitch || recentStepTowardSwitch || velTowardSwitch;
+}
+
+bool MotorWithEncoder::_isMovingTowardLimitSwitch(unsigned long now) {
+    bool liveDriveTowardSwitch = ((_lastDrivePulse * _limitSwitchDirection) > 0) ||
+                                 ((_driveAtUpdateStart * _limitSwitchDirection) > 0);
+    bool recentDriveTowardSwitch = (_lastDriveDirection == _limitSwitchDirection) && (now - _lastDriveToSwitchTime <= 250);
+    return _hasEncoderMotionTowardSwitch(now) || liveDriveTowardSwitch || recentDriveTowardSwitch;
+}
+
+double MotorWithEncoder::_distanceFromSwitchLimit() {
+    int32_t livePos = _encoder->read() - _positionOffset;
+    int32_t switchPos = 0;
+    if (_limitSwitchDirection > 0) {
+        if (_hasSoftPosLimit)
+            switchPos = _upperSoftPosLimit;
+        else if (_hasHardPosLimit)
+            switchPos = _upperHardPosLimit;
+    }
+    double distCounts = (_limitSwitchDirection < 0) ? (double)max<int32_t>(0, livePos - switchPos)
+                                                    : (double)max<int32_t>(0, switchPos - livePos);
+    if (_hasSoftPosLimit && _upperSoftPosLimit > _lowerSoftPosLimit) {
+        return distCounts / (double)(_upperSoftPosLimit - _lowerSoftPosLimit);
+    }
+    if (_hasHardPosLimit && _upperHardPosLimit > _lowerHardPosLimit) {
+        return distCounts / (double)(_upperHardPosLimit - _lowerHardPosLimit);
+    }
+    return fabs((double)(livePos - switchPos));
+}
+
+// Infers which motor's limit switch is pressed when multiple switches are wired in parallel to a single input pin.
+MotorWithEncoder* MotorWithEncoder::_inferLimitSwitchOwner(unsigned long now) {
+    // 1. If a motor on this pin is actively homing, the press belongs to it. The other motors on the pin are kept
+    // still while it homes (see isSharedLimitSwitchBusy), so they cannot be the ones pressing.
+    for (int i = 0; i < _activeMotorCount; i++) {
+        MotorWithEncoder* m = _motors[i];
+        if (m->_hasLimitSwitch && m->_limitSwitchPin == _limitSwitchPin && m->_isActivelyHoming()) {
+            return m;
+        }
+    }
+
+    // 2. If a motor on this pin already claimed the current press while the pin stays HIGH, keep that owner.
+    for (int i = 0; i < _activeMotorCount; i++) {
+        MotorWithEncoder* m = _motors[i];
+        if (m->_hasLimitSwitch && m->_limitSwitchPin == _limitSwitchPin && m->_limitSwitchState == HIGH) {
+            return m;
+        }
+    }
+
+    // 3. Rising edge during normal operation: infer which motor just hit its switch based on motion toward the
+    // switch (encoder motion or motor drive in _limitSwitchDirection) and proximity to its switch limit.
+    MotorWithEncoder* best = this;
+    for (int i = 0; i < _activeMotorCount; i++) {
+        MotorWithEncoder* m = _motors[i];
+        if (m == best || !m->_hasLimitSwitch || m->_limitSwitchPin != _limitSwitchPin) continue;
+
+        bool mMoving = m->_isMovingTowardLimitSwitch(now);
+        bool bestMoving = best->_isMovingTowardLimitSwitch(now);
+        if (mMoving != bestMoving) {
+            if (mMoving) best = m;
+            continue;
+        }
+
+        if (mMoving && bestMoving) {
+            bool mEncMoved = m->_hasEncoderMotionTowardSwitch(now);
+            bool bestEncMoved = best->_hasEncoderMotionTowardSwitch(now);
+            if (mEncMoved != bestEncMoved) {
+                if (mEncMoved) best = m;
+                continue;
+            }
+        }
+
+        double mDist = m->_distanceFromSwitchLimit();
+        double bestDist = best->_distanceFromSwitchLimit();
+        if (mDist < bestDist) {
+            best = m;
+        }
+    }
+
+    for (int i = 0; i < _activeMotorCount; i++) {
+        MotorWithEncoder* m = _motors[i];
+        if (m->_hasLimitSwitch && m->_limitSwitchPin == _limitSwitchPin) {
+            m->_rawLimitSwitchState = HIGH;
+            m->_limitSwitchState = (m == best);
+        }
+    }
+    return best;
+}
+
+void MotorWithEncoder::_updateLimitSwitch() {
+    if (!_hasLimitSwitch) return;
+
+    unsigned long now = millis();
+    _limitSwitchReading = digitalRead(_limitSwitchPin);
+    if (_limitSwitchReading != _limitSwitchReadingPrev) _limitSwitchDebounceTime = now;
+    if ((now - _limitSwitchDebounceTime) > 30) _rawLimitSwitchState = _limitSwitchReading;
+    _limitSwitchReadingPrev = _limitSwitchReading;
+
+    if (_rawLimitSwitchState == LOW) {
+        _limitSwitchState = LOW;
+        if (_limitSwitchReading == LOW) {
+            for (int i = 0; i < _activeMotorCount; i++) {
+                MotorWithEncoder* m = _motors[i];
+                if (m != this && m->_hasLimitSwitch && m->_limitSwitchPin == _limitSwitchPin &&
+                    (now - m->_limitSwitchDebounceTime) > 30) {
+                    m->_rawLimitSwitchState = LOW;
+                    m->_limitSwitchState = LOW;
+                }
+            }
+        }
+        return;
+    }
+
+    MotorWithEncoder* owner = _inferLimitSwitchOwner(now);
+    _limitSwitchState = (owner == this);
 }
 
 // Non-Blocking function for homing the motor.
 // This function is called in the update() function.
-// This function ignores the commanded values and movement restrictions (Except Hard Stop).
+// This function ignores the commanded values and movement restrictions (Except Hard Stop and opposite limit).
 void MotorWithEncoder::_home() {
     // Return if not homing
     if (!_homing) {
-        // Reset the encoder position ONCE if the limit switch is pressed
-        if (_limitSwitchState == HIGH && _limitSwitchStatePrev == LOW) this->resetEncoderPos();
+        // Set the encoder position ONCE if this motor's limit switch is inferred to be pressed
+        if (_limitSwitchState == HIGH && _limitSwitchStatePrev == LOW) _applyLimitSwitchHomePosition();
         return;
     }
 
-    if (hardStop) return;
+    unsigned long now = millis();
+    if (hardStop || softStop) {
+        _homingStateStartTime = now;
+        return;
+    }
 
     switch (_homingState) {
+        case WAITING_FOR_SHARED_SWITCH: {
+            this->brake();
+            bool otherActivelyHoming = false;
+            for (int i = 0; i < _activeMotorCount; i++) {
+                MotorWithEncoder* other = _motors[i];
+                if (other != this && other->_hasLimitSwitch && other->_limitSwitchPin == _limitSwitchPin &&
+                    other->_isActivelyHoming()) {
+                    otherActivelyHoming = true;
+                    break;
+                }
+            }
+            if (!otherActivelyHoming && _rawLimitSwitchState == LOW) {
+                _homingState = MOVING_TO_LIMIT_SWITCH;
+                _homingStateStartTime = now;
+            }
+        } break;
+
+        case CLEARING_SHARED_SWITCH:
+            if (_rawLimitSwitchState == LOW) {
+                // Do not reset the encoder position when clearing on behalf of another motor
+                this->release();
+                if (_resumeHomingAfterClearing) {
+                    // This motor was waiting to home itself, so it waits for its turn again
+                    _resumeHomingAfterClearing = false;
+                    _homingState = WAITING_FOR_SHARED_SWITCH;
+                    _homingStateStartTime = now;
+                } else {
+                    _homing = false;
+                    _homingState = IDLE;
+                }
+                break;
+            }
+            if (_isOppositeLimitViolation || (now - _homingStateStartTime) > 500) {
+                _abortSharedHoming();
+                break;
+            }
+            this->forceRotate(-_limitSwitchDirection, 0.36);
+            break;
+
         case MOVING_TO_LIMIT_SWITCH:
             if (_limitSwitchState == HIGH) {
                 _homingState = MOVING_TO_ZERO;
+                _homingStateStartTime = now;
                 break;
             }
-            this->forceRotate(-1, 0.38);
+            this->forceRotate(_limitSwitchDirection, 0.38);
             break;
 
         case MOVING_TO_ZERO:
             if (_limitSwitchState == LOW) {
-                // Reset the encoder position
-                this->resetEncoderPos();
-                // this->setEncoderPos(400);
+                _applyLimitSwitchHomePosition();
+                this->release();
+                _homing = false;
                 _homingState = IDLE;
                 break;
             }
-            this->forceRotate(1, 0.36);
+            if (_isOppositeLimitViolation) {
+                _abortSharedHoming();
+                break;
+            }
+            // If backing off for more than 500 ms does not release a shared parallel switch, the other motor on this
+            // pin may be holding its switch closed (e.g. from before power-on). Try clearing the other motor once for
+            // at most 500 ms; if already tried or no other motor shares the pin, abort homing.
+            if ((now - _homingStateStartTime) > 500) {
+                if (!_triedClearingOtherMotor) {
+                    for (int i = 0; i < _activeMotorCount; i++) {
+                        MotorWithEncoder* other = _motors[i];
+                        if (other != this && other->_hasLimitSwitch && other->_limitSwitchPin == _limitSwitchPin) {
+                            _triedClearingOtherMotor = true;
+                            this->release();
+                            _homingState = WAITING_FOR_SHARED_SWITCH;
+                            _homingStateStartTime = now;
+                            // If the other motor was waiting to home itself, it homes after clearing the switch
+                            other->_resumeHomingAfterClearing = other->_homing;
+                            other->_homing = true;
+                            other->_homingState = CLEARING_SHARED_SWITCH;
+                            other->_homingStateStartTime = now;
+                            return;
+                        }
+                    }
+                }
+                _abortSharedHoming();
+                break;
+            }
+            this->forceRotate(-_limitSwitchDirection, 0.36);
             break;
 
         case IDLE:
@@ -391,9 +735,11 @@ void MotorWithEncoder::forceRotate(int direction, double pulse) {
     switch (_driverMode) {
         case DriverMode::PWM:
             if (direction == -1) {
+                _lastDrivePulse = -map(abs(pulse), 0, 1, 0, maxPulse);
                 analogWrite(_phasePin, 0);
                 analogWrite(_enablePin, map(abs(pulse), 0, 1, 0, maxPulse));
             } else if (direction == 1) {
+                _lastDrivePulse = map(abs(pulse), 0, 1, 0, maxPulse);
                 analogWrite(_enablePin, 0);
                 analogWrite(_phasePin, map(abs(pulse), 0, 1, 0, maxPulse));
             } else
@@ -408,19 +754,31 @@ void MotorWithEncoder::forceRotate(int direction, double pulse) {
 // Sets the encoder position as the given value.
 void MotorWithEncoder::setEncoderPos(int32_t position) {
     _positionOffset = _encoder->read() - position;
+    _position = position;
+    _positionPrevious = position;
+    _lastMoveDirection = 0;
+    _lastDriveDirection = 0;
+    this->resetIntegralTerm();
     _resetPositionHistory(position);
     this->release();
 }
 
-void MotorWithEncoder::setLimitSwitchPin(int8_t pin) {
+void MotorWithEncoder::setLimitSwitchPin(int8_t pin, int direction) {
     _hasLimitSwitch = true;
     _limitSwitchPin = pin;
+    _limitSwitchDirection = (direction >= 0) ? 1 : -1;
 }
+
+int MotorWithEncoder::getLimitSwitchDirection() { return _limitSwitchDirection; }
 
 // Sets the encoder position to zero.
 void MotorWithEncoder::resetEncoderPos() {
     _positionOffset = 0;
     _encoder->readAndReset();
+    _position = 0;
+    _positionPrevious = 0;
+    _lastMoveDirection = 0;
+    _lastDriveDirection = 0;
     this->resetIntegralTerm();
     _resetPositionHistory(0);
     this->release();

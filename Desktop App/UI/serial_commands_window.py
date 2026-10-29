@@ -49,6 +49,7 @@ class SerialCommandsWindow(QWidget):
         <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>Controller mode of a motor (0: position, 1: velocity, 2: force)</u><br><b>Message Type:</b> M + MotorIndex + ControllerMode <br><b>Example:</b> <em>M02</em> </span></p>\
         <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>Encoder count to mm factors of the finger and the palm</u><br><b>Message Type:</b> U + Finger + # + Palm <br><b>Example:</b> <em>U0.0005310863#0.0059739458</em> </span></p>\
         <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>Motors stopped because no message was received for the host timeout</u><br><b>Message Type:</b> X + TimeoutInMs <br><b>Example:</b> <em>X1000</em> </span></p>\
+        <p><span style=\" font-size:9pt; font-weight:normal;\">• <u>Homing of a motor gave up, so it is not homed</u><br><b>Message Type:</b> Z + MotorIndex <br><b>Example:</b> <em>Z1</em> </span></p>\
         </body></html>"
 
         text3 = "<html><head/><body>\

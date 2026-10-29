@@ -86,6 +86,7 @@ void SerialHandler::update() {
     _printPeriodically(_printFrequency, _debug);
     _receiveNonBlocking();
     _checkHostTimeout();
+    _reportNewHomingFailures();
     // Activate interrupts if the serial port is closed
     // if(!*this->_serial) {
     //     digitalWrite(13, HIGH);
@@ -178,6 +179,7 @@ void SerialHandler::parseString(char *string) {
                     this->printLimits();
                     this->printModes();
                     this->printUnits();
+                    this->printHomingFailures();
                 }
             }
             break;
@@ -212,10 +214,12 @@ void SerialHandler::parseString(char *string) {
         case 'h':
             if (strlen(string) > 0) {
                 char motorIndex = string[0];
+                noInterrupts();  // home() also changes the other motor's state, which the control loop interrupt uses
                 if (motorIndex == '0')
                     device->finger->home();
                 else if (motorIndex == '1')
                     device->palm->home();
+                interrupts();
             }
             break;
 
@@ -462,6 +466,22 @@ void SerialHandler::printModes() {
 // The interface converts encoder counts to mm with these, so they are only defined in the firmware.
 void SerialHandler::printUnits() {
     this->p(_startMarker).p("U").p(COUNT_TO_MM, 12).p(_separator).p(COUNT_TO_MM_2, 12).pln(_endMarker);
+}
+
+// Sends "Z" for each motor whose last homing gave up, so the host knows it is not homed.
+void SerialHandler::printHomingFailures() {
+    if (device->finger->homingFailed()) this->p(_startMarker).p("Z0").pln(_endMarker);
+    if (device->palm->homingFailed()) this->p(_startMarker).p("Z1").pln(_endMarker);
+}
+
+// Sends "Z" once when the homing of a motor gives up. A host that connects later gets it with the "C" message.
+void SerialHandler::_reportNewHomingFailures() {
+    bool fingerFailed = device->finger->homingFailed();
+    bool palmFailed = device->palm->homingFailed();
+    if (fingerFailed && !_fingerHomingFailedPrev) this->p(_startMarker).p("Z0").pln(_endMarker);
+    if (palmFailed && !_palmHomingFailedPrev) this->p(_startMarker).p("Z1").pln(_endMarker);
+    _fingerHomingFailedPrev = fingerFailed;
+    _palmHomingFailedPrev = palmFailed;
 }
 
 void SerialHandler::printLimits() {

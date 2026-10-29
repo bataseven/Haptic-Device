@@ -723,6 +723,13 @@ class SerialHandler(QWidget):
                 self.setObjectPlaceholders()
                 # The device disarms the timeout when it fires, so arm it again
                 self.messageToSend.emit(f"T{st.HOST_TIMEOUT_MS}")
+            elif msgType == 'Z':
+                # Homing gave up because the shared limit switch did not release
+                motorName = {'0': "finger", '1': "palm"}.get(msg, f"motor {msg}")
+                self.infoMessagesEdit.append(
+                    f"<span style=\" font-size:8pt; font-weight:400; color:red;\" >Homing the {motorName} failed "
+                    f"because its limit switch did not release, so its position is not zeroed. Check the limit "
+                    f"switches, then home it again.</span>")
             elif msgType == 'W':
                 try:
                     generatorValue = int(msg[0])

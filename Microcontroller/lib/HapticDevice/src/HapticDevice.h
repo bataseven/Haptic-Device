@@ -35,6 +35,9 @@
 #define PALM_UPPER_SOFT_LIMIT 7200  // 6800 // 7400 // 7350
 #define PALM_LOWER_HARD_LIMIT 400
 #define PALM_UPPER_HARD_LIMIT 7500
+// Direction toward the limit switch: -1 if mounted at the lower end (0), +1 if mounted at the upper soft limit.
+#define FINGER_LIMIT_SWITCH_DIRECTION -1
+#define PALM_LIMIT_SWITCH_DIRECTION -1
 
 #define EEPROM_ADDRESS_PID_GAINS 0
 
